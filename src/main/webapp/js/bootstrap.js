@@ -358,6 +358,18 @@ else if (!mxM365Redirect)
         {
             mxscript('js/app.min.js', function()
             {
+                // FlashYun's native actions must register before App consumes
+                // the plugin queue, including when the window is already loaded.
+                if (urlParams['flashyun'] == '1' && !mxIsElectron && !supportedDomain)
+                {
+                    mxscript('js/PostConfig.js', function()
+                    {
+                        mxScriptsLoaded = true;
+                        checkAllLoaded();
+                    });
+                    return;
+                }
+
                 mxScriptsLoaded = true;
                 checkAllLoaded();
                 
