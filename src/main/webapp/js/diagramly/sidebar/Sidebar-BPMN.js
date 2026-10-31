@@ -10,7 +10,11 @@
 		var gn = 'mxgraph.bpmn2';
 		var r = 400;
 		var sb = this;
-		
+
+		this.setPickerShapes('bpmn2', ['Generic Task', 'Exclusive', 'None Start', 'End',
+			'Parallel', 'User', 'Service', 'Sub-Process, Collapsed', 'Message Intermediate, Catching',
+			'Timer Intermediate, Catching', 'Inclusive', 'Message End', 'Data Object', 'Data Store',
+			'Text Annotation', 'Send', 'Receive', 'Manual', 'Script', 'Business Rule', 'Call Activity']);
 		this.setCurrentSearchEntryLibrary('bpmn2', 'bpmn2General');
 		this.addBPMN2GeneralPalette(gn, r, sb);
 		this.setCurrentSearchEntryLibrary('bpmn2', 'bpmn2Tasks');
@@ -1172,13 +1176,13 @@
 			   	return sb.createVertexTemplateFromCells([bg], bg.geometry.width, bg.geometry.height, 'Call Choreography calling a Choreography, Parallel Multi Instance');
 			}),
 
-			this.createVertexTemplateEntry('whiteSpace=wrap;shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;html=1;', 120, 20, '', 'Participant, Initiating, Top', null, null, dt + 'initiating participant top'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];whiteSpace=wrap;shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;html=1;', 120, 20, '', 'Participant, Initiating, Top', null, null, dt + 'initiating participant top'),
 
 			this.addEntry(dt + 'initiating participant top with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 60, 120, 20), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1195,14 +1199,14 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 80, 'Participant, Initiating, Top with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;whiteSpace=wrap;html=1;', 120, 20, '', 'Additional Participant, Initiating', null, null, dt + 'initiating additional participant'),
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Initiating, Bottom', null, null, dt + 'initiating participant bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;whiteSpace=wrap;html=1;', 120, 20, '', 'Additional Participant, Initiating', null, null, dt + 'initiating additional participant'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Initiating, Bottom', null, null, dt + 'initiating participant bottom'),
 
 			this.addEntry(dt + 'initiating participant bottom with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 0, 120, 20), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1219,13 +1223,13 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 80, 'Participant, Initiating, Bottom with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Initiating, Multi-Instance, Top', null, null, dt + 'initiating participant bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Initiating, Multi-Instance, Top', null, null, dt + 'initiating participant bottom'),
 
 			this.addEntry(dt + 'initiating participant multi instance top with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 60, 120, 40), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1242,14 +1246,14 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 100, 'Participant, Initiating, Multi-Instance Top with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;', 120, 40, '', 'Additional Participant, Initiating, Multi-Instance, Bottom', null, null, dt + 'initiating additional participant multi instance bottom'),
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;verticalAlign=top;isLoopMultiParallel=1;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Initiating, Multi-Instance, Bottom', null, null, dt + 'initiating participant multi instance bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;', 120, 40, '', 'Additional Participant, Initiating, Multi-Instance, Bottom', null, null, dt + 'initiating additional participant multi instance bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;verticalAlign=top;isLoopMultiParallel=1;topLeftStyle=square;topRightStyle=square;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Initiating, Multi-Instance, Bottom', null, null, dt + 'initiating participant multi instance bottom'),
 
 			this.addEntry(dt + 'initiating participant multi instance bottom with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 0, 120, 40), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;topLeftStyle=square;topRightStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;topLeftStyle=square;topRightStyle=square;verticalAlign=top;isLoopMultiParallel=1;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1266,13 +1270,13 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 100, 'Participant, Initiating, Multi-Instance, Bottom with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Non-Initiating, Top', null, null, dt + 'non initiating participant top'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Non-Initiating, Top', null, null, dt + 'non initiating participant top'),
 			
 			this.addEntry(dt + 'non initiating participant top with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 60, 120, 20), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1289,14 +1293,14 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 80, 'Participant, Non-Initiating, Top with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Additional Participant, Non-Initiating', null, null, dt + 'non initiating additional participant'),
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Non-Initiating, Bottom', null, null, dt + 'non initiating participant bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Additional Participant, Non-Initiating', null, null, dt + 'non initiating additional participant'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 20, '', 'Participant, Non-Initiating, Bottom', null, null, dt + 'non initiating participant bottom'),
 			
 			this.addEntry(dt + 'non initiating participant bottom with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 0, 120, 20), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;isLoopSub=0;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1313,13 +1317,13 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 80, 'Participant, Non-Initiating, Bottom with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Non-Initiating, Multi-Instance, Top', null, null, dt + 'initiating participant bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Non-Initiating, Multi-Instance, Top', null, null, dt + 'initiating participant bottom'),
 			
 			this.addEntry(dt + 'non initiating participant multi instance top with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 60, 120, 40), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;bottomRightStyle=square;bottomLeftStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 
@@ -1336,14 +1340,14 @@
 			   	return sb.createVertexTemplateFromCells([cell1, cell2, edge1], 120, 100, 'Participant, Non-Initiating, Multi-Instance, Top with Decorator');
 			}),
 			
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Additional Participant, Non-Initiating, Multi-Instance, Bottom', null, null, dt + 'non initiating additional participant multi instance bottom'),
-			this.createVertexTemplateEntry('shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;verticalAlign=top;isLoopMultiParallel=1;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Non-Initiating, Multi-Instance, Bottom', null, null, dt + 'non initiating participant multi instance bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Additional Participant, Non-Initiating, Multi-Instance, Bottom', null, null, dt + 'non initiating additional participant multi instance bottom'),
+			this.createVertexTemplateEntry('points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;verticalAlign=top;isLoopMultiParallel=1;topLeftStyle=square;topRightStyle=square;fillColor=#C0C0C0;whiteSpace=wrap;html=1;', 120, 40, '', 'Participant, Non-Initiating, Multi-Instance, Bottom', null, null, dt + 'non initiating participant multi instance bottom'),
 
 			this.addEntry(dt + 'non initiating participant multi instance bottom with decorator', function()
 		   	{
 			    var cell1 = new mxCell('', 
 			    		new mxGeometry(0, 0, 120, 40), 
-			    		'shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;topLeftStyle=square;topRightStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
+			    		'points=[[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0.5,0],[0.75,1,0],[0.5,1,0],[0.25,1,0],[0,0.5,0]];shape=mxgraph.bpmn.task2;part=1;taskMarker=abstract;rectStyle=rounded;topLeftStyle=square;topRightStyle=square;verticalAlign=top;isLoopMultiParallel=1;fillColor=#C0C0C0;whiteSpace=wrap;html=1;');
 			    cell1.vertex = true;
 
 			    var cell2 = new mxCell('', 

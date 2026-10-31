@@ -1960,9 +1960,21 @@ mxGraph.prototype.getCellForChange = function(change)
  */
 mxGraph.prototype.graphModelChanged = function(changes)
 {
-	for (var i = 0; i < changes.length; i++)
+	// Walks each cell once for the invalidations of all changes
+	// (see mxGraphView.invalidatedCells)
+	var invalidated = this.view.invalidatedCells;
+	this.view.invalidatedCells = new mxDictionary();
+
+	try
 	{
-		this.processChange(changes[i]);
+		for (var i = 0; i < changes.length; i++)
+		{
+			this.processChange(changes[i]);
+		}
+	}
+	finally
+	{
+		this.view.invalidatedCells = invalidated;
 	}
 
 	this.updateSelection();
@@ -2127,7 +2139,9 @@ mxGraph.prototype.processChange = function(change)
 	// descendants need to be recreated
 	else if (change instanceof mxValueChange)
 	{
-		this.view.invalidate(change.cell, false, false);
+		// Edges that end at the label of the cell follow its new size
+		this.view.invalidate(change.cell, false,
+			this.view.isLabelPerimeter(this.view.getState(change.cell)));
 	}
 	
 	// Requires a new mxShape in JavaScript

@@ -319,6 +319,20 @@
 	Editor.enableAnimations = true;
 
 	/**
+	 * Specifies if Explore, custom link actions and plugins open the
+	 * force-directed explorer (see ForceExplorer). Default is true. false
+	 * restores the classic Explore view.
+	 */
+	Editor.forceExplore = true;
+
+	/**
+	 * Specifies if selected shapes with connections show a handle that moves
+	 * them with their connected shapes on springs (see SpringMove). Default
+	 * is false.
+	 */
+	Editor.springMove = false;
+
+	/**
 	 * Specifies if insert animations should be shown. Default is true.
 	 */
 	Editor.insertAnimations = true;
@@ -327,6 +341,13 @@
 	 * Specifies if window docking should be enabled. Default is true.
 	 */
 	Editor.enableWindowDocking = urlParams['embedInline'] != '1';
+
+	/**
+	 * Specifies if the windows that were visible when the page was last
+	 * closed, eg. Layers, Outline and Tags, should be shown again on
+	 * startup. Default is true.
+	 */
+	Editor.restoreVisibleWindows = true;
 
 	/**
 	 * Specifies paste should be at the mouse pointer location. Default is true.
@@ -640,6 +661,18 @@
 				}
 			}, getValue: function(state, format)
 			{
+				var graph = format.editorUi.editor.graph;
+				var cell = state.vertices[0];
+
+				// Text styles of labels of edges are resolved from the edge in the
+				// style of the state (see Graph.resolveInheritedLabelStyles)
+				if (cell != null && graph.model.isEdge(graph.model.getParent(cell)) &&
+					mxUtils.indexOf(Graph.inheritedLabelStyles, key) >= 0)
+				{
+					return mxUtils.indexOf(graph.getInheritedLabelKeys(
+						graph.getCellStyle(cell, false)), key) >= 0;
+				}
+
 				return mxUtils.getValue(state.style, key) == 'inherit';
 			}, valueChanged: function(newVal, input, state, format)
 			{
@@ -810,6 +843,15 @@
         {
     		return mxUtils.getValue(state.style, 'curved', '0') == '1';
         }},
+        {name: 'trimCurve', dispName: 'Trim Curve', type: 'bool', defVal: false, isVisible: function(state)
+        {
+			// Shapes that paint curves with mxConnector.paintCutCurve
+			var shape = mxUtils.getValue(state.style, mxConstants.STYLE_SHAPE, 'connector');
+
+			return (mxUtils.getValue(state.style, 'curved', '0') == '1' ||
+				mxUtils.getValue(state.style, 'bezier', '0') == '1') &&
+				(shape == 'connector' || shape == 'filledEdge' || shape == 'wire' || shape == 'pipe');
+        }},
         {name: 'sourcePortConstraint', dispName: 'Source Constraint', type: 'enum', defVal: 'none',
         	enumList: [{val: 'none', dispName: 'None'}, {val: 'north', dispName: 'North'}, {val: 'east', dispName: 'East'}, {val: 'south', dispName: 'South'}, {val: 'west', dispName: 'West'},
         		{val: 'northsouth', dispName: 'North + South'}, {val: 'eastwest', dispName: 'East + West'}]
@@ -955,6 +997,27 @@
         }},
         {name: 'fillOpacity', dispName: 'Fill Opacity', type: 'int', min: 0, max: 100, defVal: 100},
         {name: 'strokeOpacity', dispName: 'Stroke Opacity', type: 'int', min: 0, max: 100, defVal: 100},
+		{name: 'multipleCount', dispName: 'Multiple Count', type: 'int', min: 1, max: Graph.maxMultipleCount, getDefaultValue: function()
+		{
+			return Graph.defaultMultipleCount;
+		}, isVisible: function(state, format)
+		{
+			return mxUtils.getValue(state.style, 'multiple', '0') == '1';
+		}},
+		{name: 'multipleDx', dispName: 'Multiple Offset X', type: 'float', getDefaultValue: function()
+		{
+			return Graph.defaultMultipleDx;
+		}, isVisible: function(state, format)
+		{
+			return mxUtils.getValue(state.style, 'multiple', '0') == '1';
+		}},
+		{name: 'multipleDy', dispName: 'Multiple Offset Y', type: 'float', getDefaultValue: function()
+		{
+			return Graph.defaultMultipleDy;
+		}, isVisible: function(state, format)
+		{
+			return mxUtils.getValue(state.style, 'multiple', '0') == '1';
+		}},
         {name: 'overflow', dispName: 'Text Overflow', defVal: 'visible', type: 'enum',
         	enumList: [{val: 'visible', dispName: 'Visible'}, {val: 'hidden', dispName: 'Hidden'}, {val: 'block', dispName: 'Block'},
         		{val: 'fill', dispName: 'Fill'}, {val: 'width', dispName: 'Width'}]
@@ -1023,8 +1086,18 @@
         			{val: 'orthogonalPerimeter', dispName: 'Orthogonal'}, {val: 'backbonePerimeter', dispName: 'Backbone'},
         			{val: 'calloutPerimeter', dispName: 'Callout'}, {val: 'parallelogramPerimeter', dispName: 'Parallelogram'},
         			{val: 'trapezoidPerimeter', dispName: 'Trapezoid'}, {val: 'stepPerimeter', dispName: 'Step'},
-        			{val: 'centerPerimeter', dispName: 'Center'}, {val: 'cloudPerimeter', dispName: 'Cloud'}]
+        			{val: 'centerPerimeter', dispName: 'Center'}, {val: 'cloudPerimeter', dispName: 'Cloud'},
+        			{val: 'outlinePerimeter', dispName: 'Outline'}]
         },
+        {name: 'labelPerimeter', dispName: 'Label Perimeter', type: 'bool', defVal: false,
+        	isVisible: function(state, format)
+        	{
+        		// Edges end at a label outside the shape on one side (mxGraphView.getLabelPerimeterSide)
+        		var graph = format.editorUi.editor.graph;
+
+        		return state.vertices.length > 0 && state.edges.length == 0 &&
+        			Graph.isLabelOutsideOnSide(graph.getCellStyle(state.vertices[0]));
+        	}},
         {name: 'fixDash', dispName: 'Fixed Dash', type: 'bool', defVal: false},
         {name: 'container', dispName: 'Container', type: 'bool', getDefaultValue: function(state, format)
         {
@@ -1154,6 +1227,7 @@
         {name: 'resizable', dispName: 'Resizable', type: 'bool', defVal: true},
         {name: 'resizeWidth', dispName: 'Resize Width', type: 'bool', defVal: false},
         {name: 'resizeHeight', dispName: 'Resize Height', type: 'bool', defVal: false},
+        {name: 'resizeCentered', dispName: 'Resize Centered', type: 'bool', defVal: false},
         {name: 'rotatable', dispName: 'Rotatable', type: 'bool', defVal: true},
         {name: 'cloneable', dispName: 'Cloneable', type: 'bool', defVal: true},
         {name: 'deletable', dispName: 'Deletable', type: 'bool', defVal: true},
@@ -3227,6 +3301,16 @@
 				Editor.fastRendering = config.fastRendering;
 			}
 
+			if (config.forceExplore != null)
+			{
+				Editor.forceExplore = config.forceExplore;
+			}
+
+			if (config.springMove != null)
+			{
+				Editor.springMove = config.springMove;
+			}
+
 			if (config.mathOutputSize != null)
 			{
 				Editor.mathOutputSize = config.mathOutputSize;
@@ -3321,6 +3405,11 @@
 			if (config.enableInlineToolbar != null)
 			{
 				Editor.enableInlineToolbar = config.enableInlineToolbar;
+			}
+
+			if (config.enableShapeInlineToolbar != null)
+			{
+				Editor.enableShapeInlineToolbar = config.enableShapeInlineToolbar;
 			}
 
 			// Handlers are not defined in the embedded graph
@@ -3595,6 +3684,12 @@
 				mxGraph.prototype.enterStopsCellEditing = config.stopEditingOnEnter;
 			}
 
+			// Shift+Cursor selects the nearest shape and Alt+Cursor moves by the grid size
+			if (config.shiftArrowSelect != null)
+			{
+				EditorUi.prototype.shiftArrowSelect = config.shiftArrowSelect;
+			}
+
 			// Overrides default folding enabled
 			if (config.defaultFoldingEnabled != null)
 			{
@@ -3843,6 +3938,11 @@
 			if (config.enableWindowDocking != null)
 			{
 				Editor.enableWindowDocking = config.enableWindowDocking;
+			}
+
+			if (config.restoreVisibleWindows != null)
+			{
+				Editor.restoreVisibleWindows = config.restoreVisibleWindows;
 			}
 
 			if (config.compact != null)
@@ -4934,10 +5034,42 @@
 				}
 			};
 
-			// Adds global MathJax render callback
+			// Graphs of the editors whose label bounds are refreshed after
+			// MathJax has typeset (see Editor.prototype.init and destroy)
+			Editor.mathGraphs = [];
+
+			// Adds global MathJax render callback. Hook for listeners.
 			Editor.onMathJaxDone = function()
 			{
-				// Hook for listeners
+				// Refreshes cached label bounds after MathJax has typeset, so
+				// view bounds (used for export/scrollbars) reflect the rendered
+				// math size rather than the raw formula text size.
+				if (Editor.mathOutputSize)
+				{
+					var graphs = Editor.mathGraphs.slice();
+
+					for (var i = 0; i < graphs.length; i++)
+					{
+						if (graphs[i].mathEnabled)
+						{
+							graphs[i].refreshMathBounds();
+
+							if (graphs[i].container != null)
+							{
+								graphs[i].container.style.visibility = '';
+							}
+						}
+					}
+				}
+			};
+
+			// Destroyed editors no longer refresh their graphs
+			var editorDestroy = Editor.prototype.destroy;
+
+			Editor.prototype.destroy = function()
+			{
+				mxUtils.remove(this.graph, Editor.mathGraphs);
+				editorDestroy.apply(this, arguments);
 			};
 
 			// Updates math typesetting after changes
@@ -5017,29 +5149,9 @@
 					};
 				}
 
-				// Refreshes cached label bounds after MathJax has typeset, so
-				// view bounds (used for export/scrollbars) reflect the rendered
-				// math size rather than the raw formula text size.
-				var graph = this.graph;
-				var prevOnMathJaxDone = Editor.onMathJaxDone;
-
-				Editor.onMathJaxDone = function()
-				{
-					if (prevOnMathJaxDone != null)
-					{
-						prevOnMathJaxDone.apply(this, arguments);
-					}
-
-					if (Editor.mathOutputSize && graph != null && graph.mathEnabled)
-					{
-						graph.refreshMathBounds();
-
-						if (graph.container != null)
-						{
-							graph.container.style.visibility = '';
-						}
-					}
-				};
+				// Refreshes the label bounds after MathJax has typeset (see
+				// Editor.onMathJaxDone)
+				Editor.mathGraphs.push(this.graph);
 			};
 		}
 	};
@@ -5454,6 +5566,95 @@
 	};
 
 	/**
+	 * Route on icons.diagrams.net that redirects image URLs on
+	 * cdn*.iconfinder.com to the same or a similar icon in the icon cache,
+	 * which has CORS, and other icons back to Iconfinder (icon-search2
+	 * worker). Set to null to load these images from Iconfinder. Lockdown and
+	 * stealth mode send no requests to draw.io servers.
+	 */
+	Editor.iconfinderCacheUrl = (urlParams['lockdown'] != '1' &&
+		urlParams['stealth'] != '1') ?
+		'https://icons.diagrams.net/iconfinder/data/icons/' : null;
+
+	/**
+	 * Returns the URL of the icon cache route for the given image URL on
+	 * Iconfinder, otherwise the given URL. The cell style keeps the original
+	 * URL. Paths with malformed escapes, empty or dot segments, backslashes or
+	 * control characters (browsers drop tabs and newlines in URLs) are not
+	 * rewritten.
+	 */
+	Editor.getIconfinderCacheUrl = function(url)
+	{
+		if (Editor.iconfinderCacheUrl != null && typeof url === 'string' &&
+			url.indexOf('.iconfinder.com/data/icons/') > 0)
+		{
+			var match = /^https?:\/\/cdn[0-5]?\.iconfinder\.com\/data\/icons\/([^\/?#]+\/[^?#]+)$/.exec(url);
+
+			if (match != null)
+			{
+				var path = null;
+
+				try
+				{
+					path = decodeURIComponent(match[1]);
+				}
+				catch (e)
+				{
+					// Malformed escapes are not rewritten
+				}
+
+				if (path != null && !/(^|\/)\.{0,2}(\/|$)/.test(path) &&
+					!/[\\\x00-\x1f\x7f]/.test(path))
+				{
+					url = Editor.iconfinderCacheUrl + match[1];
+				}
+			}
+		}
+
+		return url;
+	};
+
+	/**
+	 * Folder of the images of the old Arista template in the icon cache: the
+	 * same files as jgraph.github.io/drawio-libs/libs/arista/, which Confluence
+	 * Cloud does not allow. Set to null to load them from jgraph.github.io.
+	 * Lockdown and stealth mode send no requests to draw.io servers.
+	 */
+	Editor.aristaCacheUrl = (urlParams['lockdown'] != '1' &&
+		urlParams['stealth'] != '1') ?
+		'https://icons.diagrams.net/assets/arista/1/' : null;
+
+	/**
+	 * Returns the URL in the icon cache for the given image URL of the old
+	 * Arista template, otherwise the given URL. Only a plain SVG file name
+	 * directly in the folder is rewritten.
+	 */
+	Editor.getAristaCacheUrl = function(url)
+	{
+		if (Editor.aristaCacheUrl != null && typeof url === 'string' &&
+			url.indexOf('jgraph.github.io/drawio-libs/libs/arista/') > 0)
+		{
+			var match = /^https?:\/\/jgraph\.github\.io\/drawio-libs\/libs\/arista\/([A-Za-z0-9_\-.]+\.svg)$/.exec(url);
+
+			if (match != null)
+			{
+				url = Editor.aristaCacheUrl + match[1];
+			}
+		}
+
+		return url;
+	};
+
+	/**
+	 * Returns the URL in the icon cache for the given image URL on Iconfinder or
+	 * of the old Arista template, otherwise the given URL.
+	 */
+	Editor.getIconCacheUrl = function(url)
+	{
+		return Editor.getAristaCacheUrl(Editor.getIconfinderCacheUrl(url));
+	};
+
+	/**
 	 * Returns an URL that is proxied if the given URL is blocked. Uses
 	 * direct URL if no CSP is used as proxy blocks unknown text content.
 	 */
@@ -5770,9 +5971,19 @@
 		// with cssVars, into local symbols with the theming per use tag
 		var symbolCache = new Object();
 
+		// Adds definitions to the defs of the root, which are not in a page
+		// that is hidden in an SVG of all pages (see Graph.createSvgWithViews)
 		var getDefs = function()
 		{
-			var defs = svgRoot.getElementsByTagName('defs')[0];
+			var defs = null;
+
+			for (var node = svgRoot.firstChild; node != null && defs == null; node = node.nextSibling)
+			{
+				if (node.nodeName == 'defs')
+				{
+					defs = node;
+				}
+			}
 
 			if (defs == null)
 			{
@@ -5864,7 +6075,8 @@
 		// that use tags can scale the shared content, with one symbol per
 		// aspect mode that reference a shared image for the data. Images
 		// that match the source of an existing symbol for themed images
-		// are redirected to that symbol.
+		// in their page or in the defs of the root are redirected to that
+		// symbol.
 		var dedupImageDefs = mxUtils.bind(this, function()
 		{
 			pending.push(mxUtils.bind(this, function()
@@ -5882,6 +6094,17 @@
 					var redirects = {};
 					var payloads = {};
 					var keys = [];
+
+					// Returns the page of the given node in an SVG of all pages
+					var getPage = function(node)
+					{
+						while (node.parentNode != null && node.parentNode != svgRoot)
+						{
+							node = node.parentNode;
+						}
+
+						return (node.nodeName == 'svg') ? node : null;
+					};
 
 					var retargetUses = function()
 					{
@@ -5971,7 +6194,8 @@
 									href + '|' + (par != 'none'));
 								var symbol = svgRoot.querySelector('[id="' + symbolId + '"]');
 
-								if (symbol != null && symbol.nodeName == 'symbol')
+								if (symbol != null && symbol.nodeName == 'symbol' &&
+									(getPage(symbol) == null || getPage(symbol) == getPage(img)))
 								{
 									if (inline)
 									{
@@ -6792,7 +7016,20 @@
 			ignoreSelection = (ignoreSelection != null) ? ignoreSelection : true;
 			graph = (graph != null) ? graph : this.graph;
 			border = (border != null) ? border : 0;
-			
+
+			// Waits for the outlines of images that edges end on (see Graph.waitForOutlines)
+			if (graph.hasPendingOutlines())
+			{
+				var args = arguments;
+
+				graph.waitForOutlines(mxUtils.bind(this, function()
+				{
+					this.exportToCanvas.apply(this, args);
+				}), 10000);
+
+				return;
+			}
+
 			var bg = (transparentBackground) ? null : graph.background;
 			
 			if (bg == mxConstants.NONE)
@@ -6893,9 +7130,11 @@
 							    var curViewScale = view.scale;
 							    view.scale = 1; //Reset the scale temporary to generate unscaled grid image which is then scaled
 								var gridImage = btoa(unescape(encodeURIComponent(view.createSvgGrid(view.gridColor))));
+								// Steps by the size of the tile, which is the grid size if
+								// it is at least minGridSize (the loop ends as it is positive)
+								var phase = view.getGridLineDistance() * view.gridSteps * scale;
 								view.scale = curViewScale;
 								gridImage = 'data:image/svg+xml;base64,' + gridImage;
-				                var phase = graph.gridSize * view.gridSteps * scale;
 				                
 				                var b = graph.getGraphBounds();
 								var tx = view.translate.x * curViewScale;
@@ -7655,6 +7894,7 @@
 		
 		mxCellRenderer.defaultShapes['document'].prototype.customProperties = [
 	        {name: 'size', dispName: 'Size', type: 'float', defVal: 0.3, min:0, max:1},
+	        {name: 'arcSize', dispName: 'Arc Size', type: 'float', min:0, defVal: mxConstants.LINE_ARCSIZE},
 	        {name: 'boundedLbl', dispName: 'Bounded Label', type: 'bool', defVal: false}
 		];
 		
@@ -7699,6 +7939,7 @@
 		
 		mxCellRenderer.defaultShapes['tape'].prototype.customProperties = [
 	        {name: 'size', dispName: 'Size', type: 'float', min:0, max:1, defVal:0.4 },
+	        {name: 'arcSize', dispName: 'Arc Size', type: 'float', min:0, defVal: mxConstants.LINE_ARCSIZE},
 	        {name: 'boundedLbl', dispName: 'Bounded Label', type: 'bool', defVal: false}
 		];
 		
@@ -7818,7 +8059,16 @@
 	    ];
 		
 		mxCellRenderer.defaultShapes['dataStorage'].prototype.customProperties = [
-	        {name: 'size', dispName: 'Size', type: 'float', min:0, max:1, defVal:0.1 }
+	        {name: 'size', dispName: 'Size', type: 'float', min:0, max:1, defVal:0.1 },
+	        {name: 'arcSize', dispName: 'Arc Size', type: 'float', min:0, defVal: mxConstants.LINE_ARCSIZE}
+		];
+		
+		mxCellRenderer.defaultShapes['or'].prototype.customProperties = [
+	        {name: 'arcSize', dispName: 'Arc Size', type: 'float', min:0, defVal: mxConstants.LINE_ARCSIZE}
+		];
+		
+		mxCellRenderer.defaultShapes['xor'].prototype.customProperties = [
+	        {name: 'arcSize', dispName: 'Arc Size', type: 'float', min:0, defVal: mxConstants.LINE_ARCSIZE}
 		];
 		
 		mxCellRenderer.defaultShapes['manualInput'].prototype.customProperties = [
@@ -7881,7 +8131,13 @@
 			{name: 'width', dispName:'Title Width', type:'float', defVal:60, min:0},
 			{name: 'height', dispName:'Title Height', type:'float', defVal:30, min:0}
 		];
-		
+
+		// Space between the lanes of a tie (see mxGraphView.updateTieLayout)
+		mxCellRenderer.defaultShapes['tie'].prototype.customProperties = [
+			{name: 'tieSpacing', dispName: 'Spacing', type: 'float', min: 0, max: 100,
+				defVal: Graph.prototype.defaultTieSpacing}
+		];
+
 		/**
 		 * Configures global color schemes.
 		 */
@@ -8549,19 +8805,46 @@
 						
 						mxEvent.addListener(input, 'keypress', function(e)
 						{
-							if (e.keyCode == 13) 
+							if (e.keyCode == 13)
 							{
 								setInputVal();
 								//set value triggers a redraw of the panel which removes the input
 							}
 						});
-						
-						input.focus();
-						
-						//FF calls blur on focus! so set the event after focusing
-						mxEvent.addListener(input, 'blur', function() 
+
+						// Escape cancels the edit before the focus goes back to the
+						// diagram, which would apply the value (see EditorUi.keydownHandler)
+						var cancelled = false;
+
+						mxEvent.addListener(input, 'keydown', function(e)
 						{
-							setInputVal();
+							if (e.keyCode == 27)
+							{
+								input.value = mxUtils.safeDecodeURIComponent(pValue);
+								cancelled = true;
+							}
+						});
+
+						mxEvent.addListener(input, 'input', function()
+						{
+							cancelled = false;
+						});
+
+						input.focus();
+
+						//FF calls blur on focus! so set the event after focusing
+						mxEvent.addListener(input, 'blur', function()
+						{
+							if (!cancelled)
+							{
+								setInputVal();
+							}
+							else
+							{
+								// Shows the value without the input as before the click
+								valueDiv.innerHTML = mxUtils.htmlEntities(
+									mxUtils.safeDecodeURIComponent(pValue));
+							}
 						});
 					}));
 				}
@@ -8600,12 +8883,16 @@
 			th.style.backgroundSize = '20px';
 			mxUtils.write(th, mxResources.get('property'));
 			hrow.style.cursor = 'pointer';
-			
+
+			// Expands and collapses with the keyboard (click on the row below)
+			that.editorUi.initKeyboardButton(th);
+
 			var onFold = function()
 			{
 				var rows = grid.querySelectorAll('.gePropNonHeaderRow');
 				var display;
-				
+				th.setAttribute('aria-expanded', (that.editorUi.propertiesCollapsed) ? 'false' : 'true');
+
 				if (!that.editorUi.propertiesCollapsed)
 				{
 					th.style.backgroundImage = 'url(\'' + Editor.arrowDownImage + '\')';
@@ -8850,6 +9137,8 @@
 						}));
 					}))(i);
 					
+					ui.initKeyboardButton(dot);
+					dot.setAttribute('aria-label', String(i + 1));
 					dots.push(dot);
 					switcher.appendChild(dot);
 				}
@@ -8880,7 +9169,7 @@
 						defaults[mxConstants.STYLE_FONTCOLOR] : 'default';
 					graph.replaceDefaultColors(new mxCell(), defaults);
 
-					var addButton = mxUtils.bind(this, function(colorset)
+					var addButton = mxUtils.bind(this, function(colorset, index)
 					{
 						var btn = mxUtils.button('', mxUtils.bind(this, function(evt)
 						{
@@ -9017,8 +9306,12 @@
 										style = mxUtils.setStyle(style, mxConstants.STYLE_NOLABEL, null);
 									}
 
-									model.setStyle(cells[i], style);
+									// The colors are own values of labels of edges that inherit
+									// the text styles of the edge (see Graph.inheritedLabelStyles)
+									model.setStyle(cells[i], graph.removeChangedInheritedLabelKeys(cells[i], style));
 								}
+
+								graph.updateInheritedLabelValuesOfEdges(cells);
 							}
 							finally
 							{
@@ -9027,6 +9320,9 @@
 						}));
 		
 						btn.className = 'geStyleButton';
+						btn.setAttribute('aria-label', (colorset == null) ? mxResources.get('default') :
+							((colorset['title'] != null) ? colorset['title'] :
+							mxResources.get('style') + ' ' + (index + 1)));
 						btn.style.width = '36px';
 						btn.style.height = (this.defaultColorSchemes.length <= maxEntries) ? '24px' : '30px';
 						btn.style.margin = '0px 6px 6px 0px';
@@ -9107,6 +9403,10 @@
 										colorset['gradient']).light + ') 100%)';
 							lightBtn.style.clipPath = 'polygon(0 100%, 100% 0, 100% 100%)';
 							lightBtn.style.backgroundColor = 'transparent';
+
+							// Overlay of the button, which takes the keyboard focus
+							lightBtn.setAttribute('tabindex', '-1');
+							lightBtn.setAttribute('aria-hidden', 'true');
 							picker.appendChild(lightBtn);
 							lightBtn.style.marginLeft = '-42px';
 
@@ -9128,7 +9428,7 @@
 								mxUtils.br(picker);
 							}
 							
-							addButton(colorsets[i]);
+							addButton(colorsets[i], i);
 						}
 					}
 				});
@@ -9160,9 +9460,15 @@
 				right.style.cssText = 'position:absolute;left:186px;bottom:' + bottom + 'px;width:20px;' +
 					'background-image:url(' + Editor.chevronRightImage + ');';
 
+				ui.initKeyboardButton(left);
+				left.setAttribute('aria-label', mxResources.get('left'));
+				ui.initKeyboardButton(right);
+				right.setAttribute('aria-label', mxResources.get('right'));
+
+				// The buttons are absolute, so the left one comes first in the order of Tab
 				if (this.defaultColorSchemes.length > 1)
 				{
-					div.appendChild(left);
+					div.insertBefore(left, picker);
 					div.appendChild(right);
 				}
 				
@@ -9613,7 +9919,7 @@
 		this.layoutManager.getLayout = function(cell)
 		{
 			// Workaround for possible invalid style after change and before view validation
-			var style = this.graph.getCellStyle(cell);
+			var style = this.graph.getChildLayoutStyle(cell);
 			
 			if (style != null)
 			{
@@ -9648,12 +9954,21 @@
 	};
 
 	/**
-	 * Adds support for custom fonts in cell styles.
+	 * Adds support for custom fonts in cell styles and loads images on
+	 * Iconfinder and of the old Arista template from the icon cache.
 	 */
 	var graphPostProcessCellStyle = Graph.prototype.postProcessCellStyle;
 	Graph.prototype.postProcessCellStyle = function(cell, style)
 	{
-		return Graph.processFontStyle(graphPostProcessCellStyle.apply(this, arguments));
+		style = Graph.processFontStyle(graphPostProcessCellStyle.apply(this, arguments));
+
+		if (style != null && style[mxConstants.STYLE_IMAGE] != null)
+		{
+			style[mxConstants.STYLE_IMAGE] = Editor.getIconCacheUrl(
+				style[mxConstants.STYLE_IMAGE]);
+		}
+
+		return style;
 	};
 
 	/**
@@ -9707,6 +10022,10 @@
 		tagCloud.style.bottom = '0px';
 		div.appendChild(tagCloud);
 
+		// The tags with their buttons are one tab stop for the keyboard
+		// (see Editor.createKeyboardGrid)
+		var keyboardGrid = Editor.createKeyboardGrid(tagCloud);
+
 		function removeInvisibleSelectionCells()
 		{
 			var cells = graph.getSelectionCells();
@@ -9737,11 +10056,13 @@
 	
 		function refreshTags(tags, selected)
 		{
+			keyboardGrid.begin();
 			tagCloud.innerText = '';
 	
 			if (tags.length > 0)
 			{
 				var table = document.createElement('table');
+				table.setAttribute('role', 'presentation');
 				table.setAttribute('cellpadding', '2');
 				table.style.boxSizing = 'border-box';
 				table.style.tableLayout = 'fixed';
@@ -9786,10 +10107,15 @@
 							td.style.align = 'center';
 							td.style.width = '16px';
 
+							var controls = [];
 							var img = document.createElement('img');
 							img.setAttribute('src', visible ? Editor.visibleImage : Editor.hiddenImage);
 							img.setAttribute('title', mxResources.get(visible ? 'hideIt' : 'show', [tag]) +
 								'\n' + mxResources.get('shiftClickShowOnly', [tag]));
+							img.setAttribute('aria-label', (visible) ? mxResources.get('hideIt', [tag]) :
+								mxResources.get('show') + ' ' + tag);
+							img.setAttribute('role', 'button');
+							controls.push(img);
 							mxUtils.setOpacity(img, visible ? 75 : 25);
 							img.className = 'geAdaptiveAsset';
 							img.style.verticalAlign = 'middle';
@@ -9860,6 +10186,9 @@
 							var img = document.createElement('img');
 							img.setAttribute('src', Editor.selectImage);
 							img.setAttribute('title', mxResources.get('select'));
+							img.setAttribute('aria-label', mxResources.get('select') + ' ' + tag);
+							img.setAttribute('role', 'button');
+							controls.push(img);
 							mxUtils.setOpacity(img, visible ? 75 : 25);
 							img.className = 'geAdaptiveAsset';
 							img.style.verticalAlign = 'middle';
@@ -9888,6 +10217,8 @@
 							td.style.verticalAlign = 'middle';
 							td.style.cursor = 'pointer';
 							td.setAttribute('title', tag);
+							td.setAttribute('role', 'button');
+							controls.push(td);
 	
 							var a = document.createElement('a');
 							mxUtils.write(a, tag);
@@ -9935,6 +10266,9 @@
 									var img = document.createElement('img');
 									img.setAttribute('src', Editor.trashImage);
 									img.setAttribute('title', mxResources.get('removeIt', [tag]));
+									img.setAttribute('aria-label', mxResources.get('removeIt', [tag]));
+									img.setAttribute('role', 'button');
+									controls.push(img);
 									mxUtils.setOpacity(img, visible ? 75 : 25);
 									img.className = 'geAdaptiveAsset';
 									img.style.verticalAlign = 'middle';
@@ -9978,6 +10312,8 @@
 									cb2.setAttribute('title', mxResources.get(
 										cb2.defaultChecked ?
 										'removeIt' : 'add', [tag]));
+									cb2.setAttribute('aria-label', tag);
+									controls.push(cb2);
 		
 									mxEvent.addListener(cb2, 'change', function(evt)
 									{
@@ -9999,6 +10335,7 @@
 								row.appendChild(td);
 							}
 	
+							keyboardGrid.addRow(tag, controls);
 							tbody.appendChild(row);
 						})(tags[i]);
 					}
@@ -10007,6 +10344,8 @@
 				table.appendChild(tbody);
 				tagCloud.appendChild(table);
 			}
+
+			keyboardGrid.end();
 		};
 	
 		var refreshUi = mxUtils.bind(this, function(sender, evt)
@@ -10065,6 +10404,7 @@
 			var resetLink = link.cloneNode(false);
 			resetLink.style.backgroundImage = 'url(' + Editor.visibleImage + ')';
 			resetLink.setAttribute('title', mxResources.get('reset'));
+			Editor.initKeyboardButton(resetLink);
 
 			mxEvent.addListener(resetLink, 'click', function(evt)
 			{
@@ -10087,6 +10427,7 @@
 				var addLink = link.cloneNode(false);
 				addLink.style.backgroundImage = 'url(' + Editor.plusImage + ')';
 				addLink.setAttribute('title', mxResources.get('add'));
+				Editor.initKeyboardButton(addLink);
 			
 				mxEvent.addListener(addLink, 'click', function(evt)
 				{
@@ -10479,13 +10820,22 @@
 	};
 
 	/**
+	 * Returns true if the given state shows a shape number. This implementation
+	 * returns true if enumerate is 1 in the style of the state.
+	 */
+	mxGraphView.prototype.isEnumerated = function(state)
+	{
+		return mxUtils.getValue(state.style, 'enumerate', 0) == '1';
+	};
+
+	/**
 	 * Adds drawing and update of the shape number. If keepValue is true then
 	 * an existing number is kept (eg. in exports, which do not number the
 	 * cells in a validation).
 	 */
 	mxGraphView.prototype.redrawEnumerationState = function(state, keepValue)
 	{
-		var enumerate = mxUtils.getValue(state.style, 'enumerate', 0) == '1';
+		var enumerate = this.isEnumerated(state);
 
 		// The numbers depend on the order of the walk over all cells (see
 		// mxGraphView.validateInvalidCells)
@@ -10552,7 +10902,56 @@
 			this.view.validateBackgroundImage();
 		}
 	};
-	
+
+	/**
+	 * Updates the SVG for the background image if the data of the current
+	 * page is not the backgroundPageData that was used to create it.
+	 */
+	Graph.prototype.validateBackgroundPageData = function()
+	{
+		if (this.backgroundPageData !== this.model.getValue(this.model.getRoot()))
+		{
+			this.refreshBackgroundImage();
+		}
+	};
+
+	/**
+	 * Looks up placeholders in the given root of another page after the
+	 * layers and before the root of this graph, so that the data of the
+	 * page that shows this graph as its background page overrides the
+	 * data of the background page. Labels are created when the root of
+	 * the model is set, so this must be called before that.
+	 */
+	Graph.prototype.addPlaceholderRoot = function(root)
+	{
+		if (root != null)
+		{
+			var graphGetPlaceholderParent = this.getPlaceholderParent;
+
+			this.getPlaceholderParent = function(cell)
+			{
+				var modelRoot = this.model.getRoot();
+				var parent = graphGetPlaceholderParent.apply(this, arguments);
+
+				// Ignores the root if it is the root of this graph, for
+				// example for a page that is its own background page
+				if (root != modelRoot)
+				{
+					if (cell == root)
+					{
+						parent = modelRoot;
+					}
+					else if (parent == modelRoot)
+					{
+						parent = root;
+					}
+				}
+
+				return parent;
+			};
+		}
+	};
+
 	/**
 	 * Sets default style (used in editor.get/setGraphXml below)
 	 */
@@ -10746,17 +11145,22 @@
 	/**
 	 * Animates the view from the given previous scale and translate to the
 	 * current ones in the given duration (default 600 ms). The panes are
-	 * painted for the current view state, and a CSS transform on the canvas
-	 * that maps them to the previous view state transitions to the identity,
-	 * so the background, the cells and the overlays move together. Any
-	 * other change of the view state stops the transition, so user-driven
-	 * zoom and pan snap instantly.
+	 * painted for the current view state, and a CSS transform that maps them
+	 * to the previous view state transitions to the identity, so the
+	 * background, the cells and the overlays move together. The transform is
+	 * on the SVG element if it is in a positioned container, so that the
+	 * browser does not repaint the cells in every frame, and an invisible
+	 * element keeps the scroll size of the container. Otherwise it is on the
+	 * canvas. Any other change of the view state stops the transition, so
+	 * user-driven zoom and pan snap instantly.
 	 */
 	Graph.prototype.transitionViewState = function(scale, translate, duration)
 	{
 		duration = (duration != null) ? duration : 600;
 		var view = this.view;
 		var node = view.getCanvas();
+		var svg = (node != null) ? node.ownerSVGElement : null;
+		var sizer = null;
 
 		if (this.stopViewStateTransition != null)
 		{
@@ -10772,11 +11176,30 @@
 		{
 			var thread = null;
 
+			if (svg != null && svg.parentNode == this.container &&
+				mxUtils.getCurrentStyle(this.container).position != 'static')
+			{
+				sizer = document.createElement('div');
+				sizer.style.cssText = 'position:absolute;left:0;top:0;' +
+					'visibility:hidden;pointer-events:none;' +
+					'width:' + this.container.scrollWidth + 'px;' +
+					'height:' + this.container.scrollHeight + 'px;';
+				this.container.appendChild(sizer);
+				node = svg;
+			}
+
 			var stop = mxUtils.bind(this, function()
 			{
 				node.style.transition = '';
 				node.style.transform = '';
 				node.style.transformOrigin = '';
+				node.style.willChange = '';
+
+				if (sizer != null && sizer.parentNode != null)
+				{
+					sizer.parentNode.removeChild(sizer);
+				}
+
 				node.removeEventListener('transitionend', transitionEnd);
 				view.removeListener(stop);
 				window.clearTimeout(thread);
@@ -10793,6 +11216,7 @@
 			};
 
 			node.style.transition = 'none';
+			node.style.willChange = 'transform';
 			node.style.transformOrigin = '0 0';
 			node.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(' + k + ')';
 
@@ -10819,11 +11243,10 @@
 	 *
 	 * Why scale-only:
 	 *   • `view.translate` defines what graph point lives at the SVG
-	 *     element's (0, 0). Changing it shifts the "scroll origin",
-	 *     so the diagram's top-left would no longer correspond to
-	 *     scrollLeft=0. Users expect the scrollbars' top-left to
-	 *     always show the top-left of the diagram, regardless of
-	 *     where the viewbox is centered.
+	 *     element's (0, 0) (see `getChromelessTranslate`). Changing it
+	 *     shifts the "scroll origin", so the scrollbars would no longer
+	 *     show the same part of the diagram and its padding,
+	 *     regardless of where the viewbox is centered.
 	 *   • Scale changes with model coordinates are visually instant
 	 *     and don't require re-rendering cells.
 	 *
@@ -10860,46 +11283,42 @@
 		var ch = this.container.clientHeight - b;
 		var scale = this.getFitScale(Math.min(cw / vbWidth, ch / vbHeight));
 
-		// Editor-style layout for the lightbox: translate so the
-		// diagram's top-left maps to SVG (0, 0). After `sizeDidChange`
-		// runs from `viewStateChanged`, the SVG element's `minWidth/
-		// minHeight` becomes `(gb.width * scale + 2 * getBorder())` —
-		// exactly the diagram at the current scale plus the graph's
-		// border. From the user's perspective:
-		//   • `scrollLeft = 0` → top-left of the diagram (not the
-		//     centred-with-padding layout `chromelessResize` sets up).
-		//   • Scrollable extent = diagram size at current scale.
-		//   • Panning happens entirely via `container.scrollLeft/Top`.
-		//
-		// The translate becomes a stable, scale-independent value
-		// across viewbox actions (always `-gb.x`, `-gb.y`), so repeated
+		// Editor-style layout for the lightbox: the translate of
+		// `getChromelessTranslate` maps the diagram's top-left to SVG
+		// (0, 0), or to the padding around the diagram in views that
+		// pad it like the editor (EditorUi). It is a stable,
+		// scale-independent value across viewbox actions, so repeated
 		// viewbox clicks at different zoom levels don't shift the
-		// scroll-origin's meaning.
-		this.view.scaleAndTranslate(scale, -gb.x, -gb.y);
+		// scroll-origin's meaning. Panning happens entirely via
+		// `container.scrollLeft/Top`.
+		var tr = this.getChromelessTranslate(scale);
+		this.view.scaleAndTranslate(scale, tr.x, tr.y);
 		this.fitScale = this.view.scale;
 
 		// With the new translate, graph (gx, gy) renders at SVG position
-		// `(gx - gb.x) * scale`. Centre the clamped viewbox in the
+		// `ox + (gx - gb.x) * scale`. Centre the clamped viewbox in the
 		// viewport using the same math as `mxGraph.fitWindow`'s
 		// hasScrollbars branch.
+		var ox = (gb.x + tr.x) * scale;
+		var oy = (gb.y + tr.y) * scale;
 		var idealLeft = (vbLeft - gb.x) * scale -
 			Math.max((cw - vbWidth * scale) / 2 + b / 2, 0);
 		var idealTop = (vbTop - gb.y) * scale -
 			Math.max((ch - vbHeight * scale) / 2 + b / 2, 0);
 
-		// Scrollable extent: SVG element's minWidth is
-		// `gb.width * scale + 2 * graphBorder`. Clamp to [0, max] so
-		// the visible viewport stays within the diagram + border area.
+		// Clamps to the diagram + border area, which is
+		// `gb.width * scale + 2 * graphBorder` wide, so the visible
+		// viewport stays within it (the padding is only for panning).
 		var graphBorder = this.getBorder();
 		var svgWidth = gb.width * scale + 2 * graphBorder;
 		var svgHeight = gb.height * scale + 2 * graphBorder;
 		var maxLeft = svgWidth - this.container.clientWidth;
 		var maxTop = svgHeight - this.container.clientHeight;
 
-		this.container.scrollLeft = (maxLeft < 0) ? 0 :
-			Math.max(0, Math.min(idealLeft, maxLeft));
-		this.container.scrollTop = (maxTop < 0) ? 0 :
-			Math.max(0, Math.min(idealTop, maxTop));
+		this.container.scrollLeft = ox + ((maxLeft < 0) ? 0 :
+			Math.max(0, Math.min(idealLeft, maxLeft)));
+		this.container.scrollTop = oy + ((maxTop < 0) ? 0 :
+			Math.max(0, Math.min(idealTop, maxTop)));
 	};
 
 	/**
@@ -10976,11 +11395,11 @@
 	 * chromeless mode. Equivalent to `scrollCellToVisible(cell, true)`
 	 * for the lightbox case.
 	 *
-	 * Normalizes `view.translate` to `(-gb.x, -gb.y)` so the
-	 * scrollable area equals the diagram at the current scale and
-	 * `scrollLeft = 0` maps to the diagram's top-left — same editor-
-	 * style layout that `fitBoundsCssTransform` produces. Without this,
-	 * if a viewbox action ran before, the translate was already
+	 * Normalizes `view.translate` to `getChromelessTranslate` so the
+	 * diagram is at the same place in the scrollable area as after
+	 * `fitBoundsCssTransform` (its top-left at `scrollLeft = 0`, or
+	 * after the padding in views that pad it like the editor). Without
+	 * this, if a viewbox action ran before, the translate was already
 	 * normalized; if the user clicked scroll right after lightbox
 	 * load, the translate was still the `chromelessResize` centred
 	 * value and the math would put the scroll target in the wrong
@@ -10998,15 +11417,20 @@
 
 		// Normalize translate (no scale change). `scaleAndTranslate`
 		// routes through `viewStateChanged → validate + sizeDidChange`
-		// so the SVG element resizes to `gb.width * s + 2 * border`.
-		if (this.view.translate.x !== -gb.x ||
-			this.view.translate.y !== -gb.y)
+		// so the SVG element resizes to `gb.width * s + 2 * border`
+		// plus the padding.
+		var tr = this.getChromelessTranslate(s);
+
+		if (this.view.translate.x !== tr.x ||
+			this.view.translate.y !== tr.y)
 		{
-			this.view.scaleAndTranslate(s, -gb.x, -gb.y);
+			this.view.scaleAndTranslate(s, tr.x, tr.y);
 		}
 
-		// With translate now `-gb`, the screen position of the cell state,
-		// `(gx + translate) * s`, is `(gx - gb.x) * s` for graph (gx, gy).
+		// With translate now `tr`, the screen position of the cell state,
+		// `(gx + translate) * s`, is `ox + (gx - gb.x) * s` for graph (gx, gy).
+		var ox = (gb.x + tr.x) * s;
+		var oy = (gb.y + tr.y) * s;
 		var cw = this.container.clientWidth;
 		var ch = this.container.clientHeight;
 
@@ -11054,10 +11478,10 @@
 			top = state.getCenterY() - ch / 2;
 		}
 
-		this.container.scrollLeft = (maxLeft < 0) ? 0 :
-			Math.max(0, Math.min(left, maxLeft));
-		this.container.scrollTop = (maxTop < 0) ? 0 :
-			Math.max(0, Math.min(top, maxTop));
+		this.container.scrollLeft = ox + ((maxLeft < 0) ? 0 :
+			Math.max(0, Math.min(left - ox, maxLeft)));
+		this.container.scrollTop = oy + ((maxTop < 0) ? 0 :
+			Math.max(0, Math.min(top - oy, maxTop)));
 	};
 
 	/**
@@ -11133,6 +11557,100 @@
 		{
 			window.setTimeout(done, duration);
 		}
+	};
+
+	/**
+	 * Moves the given cell to the center of the view, eg. after it was
+	 * explored in a read-only view (see animateViewToCell).
+	 */
+	Graph.prototype.focusCell = function(cell)
+	{
+		this.animateViewToCell(cell);
+	};
+
+	/**
+	 * Returns the scale for showing the given cell state in the center of the
+	 * container: zooms out by at most 30 % if the cell does not fit into 60 %
+	 * of the container, and zooms in by at most 30 % if it is smaller than 40
+	 * pixels. Returns the current scale otherwise.
+	 */
+	Graph.prototype.getFocusScale = function(state)
+	{
+		var s = this.view.scale;
+		var w = Math.max(1, state.width / s);
+		var h = Math.max(1, state.height / s);
+		var fit = Math.min(this.container.clientWidth * 0.6 / w,
+			this.container.clientHeight * 0.6 / h);
+		var result = s;
+
+		if (s > fit)
+		{
+			result = Math.max(fit, s / 1.3);
+		}
+		else if (Math.max(w, h) * s < 40)
+		{
+			result = Math.min(fit, s * 1.3);
+		}
+
+		return result;
+	};
+
+	/**
+	 * Scrolls the given cell to the center of the container with a transition
+	 * of the view state (see transitionViewState) and the scale of
+	 * getFocusScale. The translate is kept, so the browser limits the scroll
+	 * position to the scrollable area. The optional clamp function returns
+	 * the scroll position to use for the given one.
+	 */
+	Graph.prototype.animateViewToCell = function(cell, duration, clamp)
+	{
+		var view = this.view;
+		var state = view.getState(cell);
+
+		if (state != null)
+		{
+			this.animateView(new mxPoint(state.getCenterX() / view.scale - view.translate.x,
+				state.getCenterY() / view.scale - view.translate.y),
+				this.getFocusScale(state), duration, clamp);
+		}
+	};
+
+	/**
+	 * Scrolls the given point in model units to the center of the container
+	 * with the given scale and a transition of the view state (see
+	 * transitionViewState). The optional clamp function returns the scroll
+	 * position to use for the given one.
+	 */
+	Graph.prototype.animateView = function(center, scale, duration, clamp)
+	{
+		var view = this.view;
+		var container = this.container;
+		var s0 = view.scale;
+		var tr0 = view.translate.clone();
+		var left = container.scrollLeft;
+		var top = container.scrollTop;
+
+		if (scale != s0)
+		{
+			view.setScale(scale);
+		}
+
+		var tr = view.translate;
+		var pt = new mxPoint((center.x + tr.x) * scale - container.clientWidth / 2,
+			(center.y + tr.y) * scale - container.clientHeight / 2);
+
+		if (clamp != null)
+		{
+			pt = clamp(pt.x, pt.y);
+		}
+
+		container.scrollLeft = pt.x;
+		container.scrollTop = pt.y;
+
+		// The change of the scroll position is part of the previous translate
+		this.transitionViewState(s0, new mxPoint(
+			tr0.x + (container.scrollLeft - left) / s0,
+			tr0.y + (container.scrollTop - top) / s0), duration);
 	};
 
 	/**
@@ -13103,15 +13621,8 @@
 		var pagesToInput = pagesFromInput.cloneNode(true);
 		pagesRow.appendChild(pagesToInput);
 
-		mxEvent.addListener(pagesFromInput, 'focus', function()
-		{
-			pagesRadio.checked = true;
-		});
-		
-		mxEvent.addListener(pagesToInput, 'focus', function()
-		{
-			pagesRadio.checked = true;
-		});
+		Dialog.checkRadioOnInput(pagesFromInput, pagesRadio);
+		Dialog.checkRadioOnInput(pagesToInput, pagesRadio);
 		
 		function validatePageRange()
 		{

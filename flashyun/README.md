@@ -1,6 +1,6 @@
 # FlashYun integration
 
-Pinned upstream: v32.5.5 (`17b367b`). Branch: `flashyun-native-file-actions`.
+Pinned upstream: v32.6.9 (`3e707fd20b6930778d6f6bf6e4d0079b4bce366b`). Branch: `flashyun-native-file-actions`.
 
 `native-file-actions.js` is added. The host Docker build appends it to the
 pinned image's PostConfig.js, after official classes are loaded and before App

@@ -139,7 +139,15 @@ Actions.prototype.init = function()
 			null, null, null, new mxRectangle(0, 0, 440, 280));
 		dlg.init();
 	}).isEnabled = isGraphEnabled;
-	this.addAction('pageSetup...', function() { ui.showDialog(new PageSetupDialog(ui).container, 420, null, true, true); }).isEnabled = isGraphEnabled;
+	this.addAction('pageSetup...', function()
+	{
+		var dlg = new PageSetupDialog(ui);
+
+		ui.showDialog(dlg.container, 420, null, true, true, function()
+		{
+			dlg.destroy();
+		});
+	}).isEnabled = isGraphEnabled;
 	this.addAction('print...', function() { ui.showPrintDialog(); }, null, '', Editor.ctrlKey + '+P');
 	this.addAction('preview', function() { mxUtils.show(graph, null, 10, 10); });
 	
@@ -518,6 +526,11 @@ Actions.prototype.init = function()
 	this.addAction('selectEdges', function() { graph.selectEdges(); }, null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+E');
 	this.addAction('selectAll', function() { graph.selectAll(null, true); }, null, null, Editor.ctrlKey + '+A');
 	this.addAction('selectNone', function() { graph.clearSelection(); }, null, null, Editor.ctrlKey + '+' + Editor.shiftKey + '+A');
+	this.addAction('describeSelection', function()
+	{
+		// Says all about the selection again, also if nothing changed
+		ui.announce(ui.getSelectionDetails(), true);
+	}, null, null, Editor.altKey + '+' + Editor.shiftKey + '+D');
 	this.addAction('lockUnlock', function()
 	{
 		if (!graph.isSelectionEmpty())
@@ -1561,6 +1574,27 @@ Actions.prototype.init = function()
 	});
 	
 	// Format actions
+	this.addAction('matchConnector', function()
+	{
+		if (graph.isEnabled() && !graph.isSelectionEmpty())
+		{
+			if (graph.isEditing())
+			{
+				graph.stopEditing(false);
+			}
+
+			// Reports the new styles like Paste Style (see Graph.beginArrange)
+			var arrange = graph.beginArrange();
+			try
+			{
+				graph.setLabelStyleInherited(graph.getSelectionCells());
+			}
+			finally
+			{
+				graph.endArrange(arrange);
+			}
+		}
+	});
 	this.addAction('removeFormat', function()
 	{
 		if (graph.isEnabled() && !graph.isSelectionEmpty() && !graph.isEditing())
@@ -1900,13 +1934,11 @@ Actions.prototype.init = function()
 					{
 						var geo = graph.getCellGeometry(cell);
 
-						if (geo != null)
+						// Keeps the labels where they are (see resetLabelPositions)
+						if (geo != null && geo.points != null)
 						{
 							geo = geo.clone();
 							geo.points = null;
-							geo.x = 0;
-							geo.y = 0;
-							geo.offset = null;
 							graph.getModel().setGeometry(cell, geo);
 						}
 
@@ -1921,6 +1953,83 @@ Actions.prototype.init = function()
 			}
 		}
 	}, null, null,  Editor.altKey + '+' + Editor.shiftKey + '+R');
+	this.addAction('bundle', function()
+	{
+		var tie = graph.bundleEdges(graph.getSelectionCells());
+
+		if (tie != null)
+		{
+			graph.setSelectionCell(tie);
+		}
+	});
+	this.addAction('unbundle', function()
+	{
+		graph.unbundleCells(graph.getSelectionCells());
+	});
+	this.addAction('resetLabelPositions', function()
+	{
+		var cells = graph.getSelectionCells();
+
+		if (cells != null)
+		{
+			var model = graph.getModel();
+			cells = graph.getEditableCells(graph.addAllEdges(cells));
+
+			// Moves the label of an edge to the center of the edge and the label
+			// cells of an edge onto the edge at their position along it, which is
+			// where new labels and the labels of the edge templates are placed.
+			// Sized vertices in edges keep the offset that centers them.
+			var resetLabel = function(cell, center)
+			{
+				var geo = model.getGeometry(cell);
+
+				if (geo != null && (center || geo.relative) &&
+					((center && geo.x != 0) || geo.y != 0 ||
+					(geo.offset != null && (geo.offset.x != 0 ||
+					geo.offset.y != 0))))
+				{
+					geo = geo.clone();
+					geo.x = (center) ? 0 : geo.x;
+					geo.y = 0;
+					geo.offset = null;
+					model.setGeometry(cell, geo);
+				}
+			};
+
+			// Label cells are vertices (see Graph.beginArrange)
+			var arrange = graph.beginArrange();
+			try
+			{
+				for (var i = 0; i < cells.length; i++)
+				{
+					var cell = cells[i];
+
+					if (model.isEdge(cell))
+					{
+						resetLabel(cell, true);
+
+						for (var j = 0; j < model.getChildCount(cell); j++)
+						{
+							var child = model.getChildAt(cell, j);
+
+							if (graph.isEdgeLabelCell(child) && graph.isCellEditable(child))
+							{
+								resetLabel(child, false);
+							}
+						}
+					}
+					else if (graph.isEdgeLabelCell(cell))
+					{
+						resetLabel(cell, false);
+					}
+				}
+			}
+			finally
+			{
+				graph.endArrange(arrange);
+			}
+		}
+	});
 	action = this.addAction('subscript', mxUtils.bind(this, function()
 	{
 	    if (graph.cellEditor.isContentEditing())
@@ -2018,7 +2127,8 @@ Actions.prototype.init = function()
 	    	
 	    	if (state != null)
 	    	{
-	    		value = state.style[mxConstants.STYLE_IMAGE] || value;
+	    		value = graph.getStyleValueForEditing(state.cell, mxConstants.STYLE_IMAGE,
+					state.style[mxConstants.STYLE_IMAGE]) || value;
 				clipPath = state.style[mxConstants.STYLE_CLIP_PATH] || clipPath;
 		    }
 	    	
@@ -2241,6 +2351,55 @@ Actions.prototype.init = function()
 
 	action.setToggleAction(true);
 	action.setSelectedCallback(mxUtils.bind(this, function() { return this.outlineWindow != null && this.outlineWindow.window.isVisible(); }));
+
+	// Moves the focus into the text outline when it is shown
+	action = this.addAction('textOutline', mxUtils.bind(this, function()
+	{
+		if (this.textOutlineWindow == null)
+		{
+			var saved = (ui.installWindowPersistence != null) ?
+				mxSettings.getWindowState('textOutline') : null;
+			var tw = (saved != null && saved.w != null) ? saved.w : 280;
+			var th = (saved != null && saved.h != null) ? saved.h : 360;
+			var tx = (saved != null && saved.x != null) ? saved.x :
+				document.body.offsetWidth - tw - 40;
+			var ty = (saved != null && saved.y != null) ? saved.y : 120;
+
+			this.textOutlineWindow = new TextOutlineWindow(ui, tx, ty, tw, th);
+			this.textOutlineWindow.window.addListener('show', mxUtils.bind(this, function()
+			{
+				ui.fireEvent(new mxEventObject('textOutline'));
+			}));
+			this.textOutlineWindow.window.addListener('hide', function()
+			{
+				ui.fireEvent(new mxEventObject('textOutline'));
+			});
+
+			if (ui.installWindowPersistence != null)
+			{
+				ui.installWindowPersistence('textOutline', this.textOutlineWindow);
+
+				if (saved != null)
+				{
+					ui.restoreWindowState('textOutline', this.textOutlineWindow);
+				}
+			}
+
+			this.textOutlineWindow.window.setVisible(true);
+		}
+		else
+		{
+			this.textOutlineWindow.window.setVisible(!this.textOutlineWindow.window.isVisible());
+		}
+
+		if (this.textOutlineWindow.window.isVisible())
+		{
+			this.textOutlineWindow.focus();
+		}
+	}), null, null, Editor.altKey + '+' + Editor.shiftKey + '+U');
+
+	action.setToggleAction(true);
+	action.setSelectedCallback(mxUtils.bind(this, function() { return this.textOutlineWindow != null && this.textOutlineWindow.window.isVisible(); }));
 };
 
 /**

@@ -1,4 +1,4 @@
-/** FlashYun native file actions for pinned draw.io 32.5.5. Apache-2.0. */
+/** FlashYun native file actions for pinned draw.io 32.6.9. Apache-2.0. */
 (function()
 {
     if (urlParams['flashyun'] !== '1' || urlParams['embed'] !== '1') return;

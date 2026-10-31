@@ -37,6 +37,10 @@
 	// model order breaks crossing-minimization ties and never adds crossings.
 	Menus.flowModelOrder = 'NODES_AND_EDGES';
 
+	// Default style for edges seeded inside the layout containers below.
+	Menus.layoutContainerEdgeStyle = 'html=1;rounded=1;curved=0;' +
+		'sourcePerimeterSpacing=0;targetPerimeterSpacing=0;startSize=6;endSize=6;';
+
 	Menus.layoutContainers = (function()
 	{
 		var elkChildLayout = function(layout, config)
@@ -67,10 +71,14 @@
 				'transparentBounds=1;groupPadding=20;' + extra;
 		};
 
-		var entry = function(sideTitle, width, height, extra)
+		// The optional vertex and edge styles are the styles of the seed cells
+		// (default is a box with wrapped text and the edge style of the caller)
+		var entry = function(sideTitle, width, height, extra, vertexStyle, edgeStyle)
 		{
 			return {width: width, height: height, style: group(extra),
-				sidebarStyle: swimlane(sideTitle, extra)};
+				sidebarStyle: swimlane(sideTitle, extra),
+				vertexStyle: (vertexStyle != null) ? vertexStyle : 'whiteSpace=wrap;html=1;',
+				edgeStyle: edgeStyle};
 		};
 
 		var topPad = '[top=40,left=20,bottom=20,right=20]';
@@ -114,13 +122,41 @@
 				elkChildLayout('elkRadial', {'elk.padding': topPad})),
 			organic: entry(false, 320, 320,
 				elkChildLayout('elkOrganic', {'elk.padding': topPad})),
-			circle: entry(false, 320, 320, 'childLayout=circleLayout;')
+			circle: entry(false, 320, 320, 'childLayout=circleLayout;'),
+			// Straight connectors without arrows. The shapes pass them on to
+			// the connectors of the tree tools (newEdgeStyle), which start
+			// with the current style for the children of a root.
+			balloonTree: entry(false, 645, 537, 'containerType=tree;childLayout=' +
+				Graph.encodeChildLayout([{layout: 'BalloonTreeLayout',
+					config: {levelDistance: 30, nodeDistance: 10, arc: 300, childArc: 90}}]) + ';',
+				'whiteSpace=wrap;html=1;newEdgeStyle=' + Graph.encodeNewEdgeStyle(
+					{edgeStyle: 'none', startArrow: 'none', endArrow: 'none'}) + ';',
+				Menus.layoutContainerEdgeStyle + 'startArrow=none;endArrow=none;'),
+			// The shapes of the mindmap in the Advanced sidebar (see Trees.js):
+			// an ellipse as the root, topics that fit their label and curved
+			// connectors
+			mindmap: (function()
+			{
+				var newEdgeStyle = 'newEdgeStyle=' + Graph.encodeNewEdgeStyle({
+					edgeStyle: 'entityRelationEdgeStyle', startArrow: 'none',
+					endArrow: 'none', segment: 10, curved: 1, sourcePerimeterSpacing: 0,
+					targetPerimeterSpacing: 0}) + ';';
+				var def = entry(false, 380, 116, 'containerType=tree;childLayout=' +
+					Graph.encodeChildLayout([{layout: 'MindmapLayout',
+						config: {levelDistance: 40, nodeDistance: 10}}]) + ';',
+					'whiteSpace=wrap;html=1;rounded=1;arcSize=50;align=center;' +
+					'verticalAlign=middle;strokeWidth=1;autosize=1;spacing=4;' +
+					'treeFolding=1;treeMoving=1;' + newEdgeStyle,
+					'edgeStyle=entityRelationEdgeStyle;startArrow=none;endArrow=none;' +
+					'segment=10;curved=1;sourcePerimeterSpacing=0;targetPerimeterSpacing=0;');
+				def.vertexSize = [80, 20];
+				def.rootStyle = 'ellipse;whiteSpace=wrap;html=1;align=center;' +
+					'treeFolding=1;treeMoving=1;' + newEdgeStyle;
+
+				return def;
+			})()
 		};
 	})();
-
-	// Default style for edges seeded inside the layout containers above.
-	Menus.layoutContainerEdgeStyle = 'html=1;rounded=1;curved=0;' +
-		'sourcePerimeterSpacing=0;targetPerimeterSpacing=0;startSize=6;endSize=6;';
 
 	Menus.prototype.createHelpLink = function(href)
 	{
@@ -308,6 +344,19 @@
 		{
 			return editorUi.pages != null && editorUi.pages.length > 1 &&
 				editorUi.editor.graph.isEnabled();
+		};
+
+		var pageGroupsAction = editorUi.actions.put('pageGroups', new Action(
+			mxResources.get('pageGroups', null, 'Page Groups'), function()
+		{
+			editorUi.setPageGroupsEnabled(!editorUi.isPageGroupsEnabled());
+		}));
+
+		pageGroupsAction.setToggleAction(true);
+		pageGroupsAction.setSelectedCallback(function() { return editorUi.isPageGroupsEnabled(); });
+		pageGroupsAction.isEnabled = function()
+		{
+			return editorUi.fileNode != null && editorUi.editor.graph.isEnabled();
 		};
 		
 		var shareCursorAction = editorUi.actions.addAction('shareCursor', function()
@@ -1038,12 +1087,35 @@
 			}
 		}, null, null,  Editor.altKey + '+' + Editor.shiftKey + '+K').isEnabled = isActionAndGraphEnabled;
 		
+		// Returns the styles of the given style that Paste Text Style pastes
+		var getTextStyle = function(style)
+		{
+			var result = {};
+
+			for (var i = 0; i < Graph.pasteTextStyles.length; i++)
+			{
+				var key = Graph.pasteTextStyles[i];
+
+				if (style[key] != null)
+				{
+					result[key] = style[key];
+				}
+				else if (key == 'fontStyle')
+				{
+					result[key] = 0;
+				}
+			}
+
+			return result;
+		};
+
 		editorUi.actions.addAction('copyStyle', function()
 		{
 			if (graph.isEnabled() && graph.getSelectionCount() == 1)
 			{
 				var cell = graph.getSelectionCell();
-				var style = graph.getCellStyle(cell, false);
+				var style = graph.resolveInheritedLabelStyles(cell,
+					graph.getCellStyle(cell, false));
 				editorUi.copiedStyle = {};
 				var values = [];
 				var keys = [];
@@ -1053,9 +1125,13 @@
 					values.push(style[key]);
 					keys.push(key);
 				}
-				
+
 				graph.copyCellStyles([cell], keys, values,
 					editorUi.copiedStyle, editorUi.copiedStyle);
+
+				// Paste Text Style pastes the text styles of the last copied style
+				// or text style, eg. the label style of an edge to its label cells
+				editorUi.copiedTextStyle = getTextStyle(style);
 			}
 		}, null, null,  Editor.altKey + '+C');
 
@@ -1083,22 +1159,8 @@
 			if (graph.isEnabled() && graph.getSelectionCount() == 1)
 			{
 				var cell = graph.getSelectionCell();
-				var style = graph.getCellStyle(cell, false);
-				editorUi.copiedTextStyle = {};
-
-				for (var i = 0; i < Graph.pasteTextStyles.length; i++)
-				{
-					var key = Graph.pasteTextStyles[i];
-
-					if (style[key] != null)
-					{
-						editorUi.copiedTextStyle[key] = style[key];
-					}
-					else if (key == 'fontStyle')
-					{
-						editorUi.copiedTextStyle[key] = 0;
-					}
-				}
+				editorUi.copiedTextStyle = getTextStyle(graph.resolveInheritedLabelStyles(
+					cell, graph.getCellStyle(cell, false)));
 			}
 		}, null, null, Editor.ctrlKey + '+' + Editor.altKey + '+C');
 
@@ -1118,17 +1180,29 @@
 				mxUtils.bind(this, function(scale, transparentBackground, ignoreSelection,
 					addShadow, editable, embedImages, border, cropImage, currentPage,
 					linkTarget, grid, theme, exportType, embedFonts, embedCellMetadata,
-					dpi, icons)
+					dpi, icons, allPages)
 				{
 					var val = parseInt(scale);
 					editorUi.lastExportSvgEditable = editable;
 
 					if (!isNaN(val) && val > 0)
 					{
-						editorUi.exportSvg(val / 100, transparentBackground, ignoreSelection,
-							addShadow, editable, embedImages, border, !cropImage, currentPage,
-							linkTarget, theme, exportType, embedFonts, null, embedCellMetadata,
-							grid, icons);
+						var exportSvg = function()
+						{
+							editorUi.exportSvg(val / 100, transparentBackground, ignoreSelection,
+								addShadow, editable, embedImages, border, !cropImage, currentPage,
+								linkTarget, theme, exportType, embedFonts, null, embedCellMetadata,
+								grid, icons, allPages);
+						};
+
+						if (allPages)
+						{
+							editorUi.prepareOtherPages(exportSvg);
+						}
+						else
+						{
+							exportSvg();
+						}
 					}
 				}), true, editorUi.lastExportSvgEditable, 'svg', true);
 		}));
@@ -1266,7 +1340,8 @@
 			// shortcuts.svg is shown in a dialog which also works offline
 			if (EditorUi.isElectronApp)
 			{
-				var ratio = 1069 / 1427;
+				// Height and width of shortcuts.svg
+				var ratio = 1165 / 1427;
 				var w = Math.max(200, Math.min(1427, window.innerWidth - 120));
 				var h = Math.round(w * ratio);
 				var maxH = Math.max(150, window.innerHeight - 120);
@@ -1309,6 +1384,64 @@
 			}
 		});
 		
+		editorUi.actions.addAction('styleRules...', function()
+		{
+			if (editorUi.editor.graph.isEnabled())
+			{
+				var dlg = new StyleRulesDialog(editorUi);
+				editorUi.showDialog(dlg.container, 760, 440, true, true, null, null, null,
+					new mxRectangle(0, 0, 560, 300), null, 'styleRules');
+				dlg.init();
+			}
+		});
+
+		editorUi.actions.addAction('dataSources...', function()
+		{
+			if (editorUi.editor.graph.isEnabled())
+			{
+				var dlg = new DataSourcesDialog(editorUi);
+				editorUi.showDialog(dlg.container, 560, null, true, true, function()
+				{
+					dlg.destroy();
+				});
+				dlg.init();
+			}
+		});
+
+		// Refresh All in the Data Sources row of Page Setup, which passes a
+		// function(text, error, busy) for the status of the refresh
+		var refreshDataSources = editorUi.actions.addAction('refreshDataSources', function(status)
+		{
+			if (editorUi.editor.graph.isEnabled())
+			{
+				status = (typeof status === 'function') ? status : function() { };
+				status(mxResources.get('loading') + '...', false, true);
+
+				editorUi.refreshDataSources(null, function(count, errors)
+				{
+					if (errors.length > 0)
+					{
+						status(errors.map(function(e)
+						{
+							return e.source.id + ': ' + ((e.error != null &&
+								e.error.message != null) ? e.error.message : e.error);
+						}).join('; '), true, false);
+					}
+					else
+					{
+						status(mxResources.get('refreshedAt',
+							[new Date().toLocaleTimeString()], 'Refreshed at {1}'), false, false);
+					}
+				});
+			}
+		});
+
+		// Only for pages with data sources
+		refreshDataSources.isVisible = function()
+		{
+			return editorUi.editor.graph.getDataSources().length > 0;
+		};
+
 		action = editorUi.actions.addAction('tags', mxUtils.bind(this, function()
 		{
 			if (this.tagsWindow == null)
@@ -1704,6 +1837,34 @@
 			}
 		}, null, null, Editor.ctrlKey + '+' + Editor.altKey + '+T');
 
+		// Opens the dialog of the layout of the selected layout container
+		editorUi.actions.addAction('editLayout...', function()
+		{
+			var cell = editorUi.getEditableLayoutContainer();
+
+			if (cell != null)
+			{
+				editorUi.editContainerLayout(cell);
+			}
+		});
+
+		// Opens the outline of the selected tree, balloon or mindmap container
+		editorUi.actions.addAction('editOutline...', function()
+		{
+			var cell = editorUi.getOutlineContainer();
+
+			if (cell != null)
+			{
+				editorUi.showOutlineDialog(cell);
+			}
+		});
+
+		// Inserts a tree, balloon or mindmap container from an outline
+		editorUi.actions.addAction('fromOutline...', function()
+		{
+			editorUi.showOutlineDialog();
+		}).isEnabled = isGraphEnabled;
+
 		// Adds action for removing user-defined colors
 		editorUi.actions.put('adaptiveColors', new Action('adaptiveColors', function(evt)
 		{
@@ -1744,7 +1905,7 @@
 			}, parent, null, isGraphEnabled() && editorUi.lastLayoutSpec != null);
 
 			menus.addShortcut(item, action);
-
+			menus.addMenuItems(menu, ['editLayout', 'editOutline'], parent);
 			menu.addSeparator(parent);
 
 			if (typeof ElkLayout !== 'undefined')
@@ -1772,132 +1933,13 @@
 				addElk('organic');
 			}
 
+			// Selected layout containers get the org chart as their layout
 			menu.addItem(mxResources.get('orgChart') + '...', null, function()
 			{
-				var branchOptimizer = null, parentChildSpacingVal = 20, siblingSpacingVal = 20;
-				
-				// Invoked when orgchart code was loaded
-				var delayed = function()
+				editorUi.showOrgChartConfigDialog(function(entry)
 				{
-					if (typeof mxOrgChartLayout !== 'undefined' && branchOptimizer != null)
-					{
-						editorUi.tryAndHandle(mxUtils.bind(this, function()
-						{
-							var graph = editorUi.editor.graph;
-							var orgChartLayout = new mxOrgChartLayout(graph,
-								branchOptimizer, parentChildSpacingVal, siblingSpacingVal);
-							var cell = graph.getDefaultParent();
-							
-							if (graph.model.getChildCount(graph.getSelectionCell()) > 1)
-							{
-								cell = graph.getSelectionCell();
-							}
-							
-							orgChartLayout.execute(cell);
-						}));
-					}
-				};
-
-				var div = document.createElement('div');
-
-				// Each label + control sits on its own block row with a bottom
-				// margin, so the rows keep a consistent vertical rhythm. The old
-				// inline-block flow gave the rows no inter-row spacing (the
-				// label marginTop only nudged vertical-align within a row), so
-				// the dropdown row sat cramped against the row below it.
-				var addRow = function(labelKey, control)
-				{
-					var row = document.createElement('div');
-					row.style.marginBottom = '8px';
-
-					var label = document.createElement('div');
-					label.style.display = 'inline-block';
-					label.style.width = '180px';
-					label.style.verticalAlign = 'middle';
-					mxUtils.write(label, mxResources.get(labelKey) + ': ');
-					row.appendChild(label);
-
-					control.style.width = '160px';
-					control.style.boxSizing = 'border-box';
-					control.style.verticalAlign = 'middle';
-					row.appendChild(control);
-
-					div.appendChild(row);
-				};
-
-				var typeSelect = document.createElement('select');
-
-				//Types are hardcoded here since the code is not loaded yet
-				var typesArr = [mxResources.get('linear'),
-					mxResources.get('hanger2'),
-					mxResources.get('hanger4'),
-					mxResources.get('fishbone1'),
-					mxResources.get('fishbone2'),
-					mxResources.get('1ColumnLeft'),
-					mxResources.get('1ColumnRight'),
-					mxResources.get('smart')
-				];
-
-				for (var i = 0; i < typesArr.length; i++)
-				{
-					var option = document.createElement('option');
-					mxUtils.write(option, typesArr[i]);
-					option.value = i;
-
-					if (i == 2)
-					{
-						option.setAttribute('selected', 'selected');
-					}
-
-					typeSelect.appendChild(option);
-				}
-
-				mxEvent.addListener(typeSelect, 'change', function()
-				{
-					branchOptimizer = typeSelect.value;
+					editorUi.runOrgChartLayout(entry);
 				});
-
-				addRow('orgChartType', typeSelect);
-
-				var parentChildSpacing = document.createElement('input');
-				parentChildSpacing.type = 'number';
-				parentChildSpacing.value = parentChildSpacingVal;
-
-				mxEvent.addListener(parentChildSpacing, 'change', function()
-				{
-					parentChildSpacingVal = parentChildSpacing.value;
-				});
-
-				addRow('parentChildSpacing', parentChildSpacing);
-
-				var siblingSpacing = document.createElement('input');
-				siblingSpacing.type = 'number';
-				siblingSpacing.value = siblingSpacingVal;
-
-				mxEvent.addListener(siblingSpacing, 'change', function()
-				{
-					siblingSpacingVal = siblingSpacing.value;
-				});
-
-				addRow('siblingSpacing', siblingSpacing);
-
-				// The legacy "Custom…" escape hatch is gone now that the Custom
-				// Layout dialog has its own Add dropdown — picking Org Chart
-				// there opens this same configuration UI and writes the JSON.
-				var dlg = new CustomDialog(editorUi, div, function()
-				{
-					if (branchOptimizer == null)
-					{
-						branchOptimizer = 2;
-					}
-
-					editorUi.loadOrgChartLayouts(delayed);
-				}, null, null,
-					'https://www.drawio.com/docs/manual/layouts/org-chart-layout/');
-
-				// null height = size to content (a fixed height clips the
-				// third row behind a scrollbar)
-				editorUi.showDialog(dlg.container, 355, null, true, true);
 			}, parent, null, isGraphEnabled());
 
 			// Circle layout has no ELK equivalent (radial is concentric rings,
@@ -1933,6 +1975,23 @@
 					}, true);
 				}));
 			}), parent);
+
+			// Selected layout containers get these layouts as their layout
+			menu.addSeparator(parent);
+
+			var addLayoutDialog = function(label, name)
+			{
+				menu.addItem(mxResources.get(label) + '...', null, function()
+				{
+					editorUi.showLayoutDialog(name, function(entry)
+					{
+						editorUi.runLayoutEntry(entry);
+					});
+				}, parent, null, isGraphEnabled());
+			};
+
+			addLayoutDialog('balloonTree', 'BalloonTreeLayout');
+			addLayoutDialog('mindmap', 'MindmapLayout');
 
 			menu.addSeparator(parent);
 
@@ -2011,6 +2070,7 @@
 				item.style.cursor = 'default';
 				
 				var input = document.createElement('input');
+				input.setAttribute('aria-label', mxResources.get('search'));
 				input.setAttribute('type', 'text');
 				input.setAttribute('size', '25');
 				input.style.borderWidth = '1px';
@@ -3065,7 +3125,8 @@
 						{
 							var dlg = new EmbedDialog(editorUi, '<img src="' + EditorUi.encodeAttributeUrl(
 								(current.constructor != DriveFile) ? url : 'https://drive.google.com/uc?id=' +
-								current.getId()) + '"/>');
+								current.getId()) + '" alt="' + mxUtils.htmlEntities(
+								editorUi.getEmbedImageAlt(true)) + '"/>');
 							editorUi.showDialog(dlg.container, 450, 270, true, true, null, false, null, new mxRectangle(0, 0, 400, 250));
 							dlg.init();
 						}
@@ -3952,16 +4013,64 @@
 		
 		this.put('publish', new Menu(mxUtils.bind(this, function(menu, parent)
 		{
-			this.addMenuItems(menu, ['publishLink', 'presentationMode'], parent);
+			this.addMenuItems(menu, ['publishLink', 'presentationMode', 'exploreMode'], parent);
 		})));
 
 		editorUi.actions.put('presentationMode', new Action('presentationMode' + '...', function()
 		{
+			// Opening presentation mode is own input and ends the follow of a
+			// presenter, unless the follow opens it (see applySharedViewMode)
+			if (!editorUi.openingSharedView)
+			{
+				editorUi.stopFollowing();
+			}
+
 			var dark = Editor.isDarkMode();
+
+			// Contains the presentation, which is shown with a zoom from the
+			// selected cell, or the center of the editor, after it was loaded and
+			// fitted. The labels are measured in the invisible frame.
+			var frame = document.createElement('div');
+			frame.style.cssText = 'position:fixed;inset:0;z-index:999;opacity:0';
+			frame.setAttribute('role', 'dialog');
+			frame.setAttribute('aria-modal', 'true');
+			frame.setAttribute('aria-label', mxResources.get('presentationMode'));
+
+			// Gets the focus back after closing
+			var previousFocus = document.activeElement;
+
+			var getOrigin = function()
+			{
+				var eg = editorUi.editor.graph;
+				var state = eg.view.getState(eg.getSelectionCell());
+				var r = eg.container.getBoundingClientRect();
+				var pt = (state != null) ? new mxPoint(r.left + state.getCenterX() -
+					eg.container.scrollLeft, r.top + state.getCenterY() -
+					eg.container.scrollTop) : new mxPoint(r.left + r.width / 2,
+					r.top + r.height / 2);
+
+				return new mxPoint(Math.max(0, Math.min(window.innerWidth, pt.x)),
+					Math.max(0, Math.min(window.innerHeight, pt.y)));
+			};
+
+			// Tooltips of the editor, also pending ones, would be shown above the
+			// presentation and never hidden as the presentation gets the mouse
+			// events
+			if (editorUi.editor.graph.tooltipHandler != null)
+			{
+				editorUi.editor.graph.tooltipHandler.hide();
+			}
 
 			var backdrop = document.createElement('div');
 			backdrop.style.cssText = 'position:fixed;inset:0;z-index:999;background-color:#000000';
-			document.body.appendChild(backdrop);
+			frame.appendChild(backdrop);
+			document.body.appendChild(frame);
+
+			// Takes the keyboard focus from the editor, whose typing shim would
+			// handle the keys (see handleButtonKeys for the buttons)
+			frame.setAttribute('tabindex', '-1');
+			frame.style.outline = 'none';
+			frame.focus({preventScroll: true});
 
 			// Save and set urlParams for chromeless mode
 			var savedParams = {};
@@ -3997,63 +4106,502 @@
 			ui.refresh = function() {};
 			ui.updateHashObject = function() {};
 
+			// Fits the diagram and its pages at 100% or less when they are shown.
+			// The Fit button uses the limit of other lightboxes.
+			var maxFitScale = ui.lightboxMaxFitScale;
+			ui.lightboxMaxFitScale = 1;
+
 			var graph = ui.editor.graph;
 			var lightbox = graph.container;
 			lightbox.style.cssText = 'position:fixed;inset:0;overflow:hidden;outline:none;z-index:999';
 
+			// The glowing cell in the center
+			var glow = null;
+
+			// The last clicked cell, or the cell selected in the editor, is explored
+			var exploreCell = null;
+
+			// Scrolls with an ease-out timing, stopped by the next gesture or a
+			// change of the view state
+			var scrollThread = null;
+
+			var stopScroll = function()
+			{
+				if (scrollThread != null)
+				{
+					window.cancelAnimationFrame(scrollThread);
+					scrollThread = null;
+				}
+			};
+
+			var scrollTo = function(left, top)
+			{
+				stopScroll();
+				var sx = lightbox.scrollLeft;
+				var sy = lightbox.scrollTop;
+				var t0 = null;
+
+				var step = function(time)
+				{
+					t0 = (t0 != null) ? t0 : time;
+					var k = Math.min(1, (time - t0) / 600);
+					var e = 1 - Math.pow(1 - k, 3);
+					lightbox.scrollLeft = sx + (left - sx) * e;
+					lightbox.scrollTop = sy + (top - sy) * e;
+					scrollThread = (k < 1) ? window.requestAnimationFrame(step) : null;
+				};
+
+				scrollThread = window.requestAnimationFrame(step);
+			};
+
+			mxEvent.addListener(lightbox, 'wheel', function()
+			{
+				ForceExplorer.fireInput();
+				stopScroll();
+			});
+
+			// Changes of the view are sent to collaborators that follow
+			mxEvent.addListener(lightbox, 'scroll', ForceExplorer.fireChange);
+			graph.view.addListener(mxEvent.SCALE, ForceExplorer.fireChange);
+			graph.view.addListener(mxEvent.TRANSLATE, ForceExplorer.fireChange);
+			graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, ForceExplorer.fireChange);
+			graph.view.addListener(mxEvent.SCALE, stopScroll);
+			graph.view.addListener(mxEvent.TRANSLATE, stopScroll);
+			graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, stopScroll);
+
+			// Limits the scroll position so that the diagram stays near the window:
+			// next to a larger diagram at most a quarter of the window is empty and
+			// a smaller diagram stays in the window
+			var clampScroll = function(left, top)
+			{
+				var view = graph.view;
+				var b = view.getModelGraphBounds();
+				var s = view.scale;
+
+				var clamp = function(value, start, size, client)
+				{
+					var lo = start + size + 20 - client;
+					var hi = start - 20;
+
+					if (size > client)
+					{
+						lo = start - client / 4;
+						hi = start + size + client / 4 - client;
+					}
+
+					return (lo > hi) ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, value));
+				};
+
+				return new mxPoint(clamp(left, (b.x + view.translate.x) * s,
+					b.width * s, lightbox.clientWidth), clamp(top,
+					(b.y + view.translate.y) * s, b.height * s, lightbox.clientHeight));
+			};
+
+			// Makes the given cell glow, or none. The glow is an SVG filter, as
+			// WebKit (Safari and all browsers in iOS) ignores the CSS filter
+			// functions on SVG elements. It is referenced in the inline style,
+			// which WebKit applies and which replaces the drop shadow of shapes
+			// with a shadow while they glow, and in the filter attribute.
+			var glowCell = null;
+			var glowFilter = null;
+			var glowRestore = null;
+			var glowCss = null;
+
+			// Updates the glow for the scale of the view: a drop shadow that
+			// blurs 6 px on the screen, as drop-shadow(0 0 6px) in CSS, in a
+			// filter region around the bounding box of the shape, in its user
+			// space, so that a shape without a width or a height keeps it. The
+			// user space is in model units if the view uses model coordinates.
+			var updateGlow = function()
+			{
+				if (glow != null && glowFilter != null)
+				{
+					var state = graph.view.getState(glowCell);
+					var s = (graph.view.modelCoordinates) ? graph.view.scale : 1;
+					var sd = 3 / s;
+					var sw = (state != null && state.shape != null) ?
+						Number(state.shape.strokewidth) || 1 : 1;
+					var m = 4 * sd + sw * graph.view.scale / s;
+					var bbox = null;
+
+					try
+					{
+						bbox = glow.getBBox();
+					}
+					catch (e)
+					{
+						// Not rendered
+					}
+
+					if (bbox != null && isFinite(bbox.x) && isFinite(bbox.y) &&
+						isFinite(bbox.width) && isFinite(bbox.height))
+					{
+						glowFilter.setAttribute('x', bbox.x - m);
+						glowFilter.setAttribute('y', bbox.y - m);
+						glowFilter.setAttribute('width', bbox.width + 2 * m);
+						glowFilter.setAttribute('height', bbox.height + 2 * m);
+					}
+
+					glowFilter.firstChild.setAttribute('stdDeviation', sd);
+				}
+			};
+
+			// Removes the glow from its shape and restores its filter
+			var removeGlow = function()
+			{
+				if (glow != null)
+				{
+					glow.removeAttribute('filter');
+					glow.style.filter = glowRestore;
+					glow = null;
+				}
+			};
+
+			// Applies the glow to the shape of the glowing cell. Shapes are
+			// replaced or painted again, eg. if a container is expanded, and
+			// painting sets the inline filter of shapes with a shadow.
+			var applyGlow = function()
+			{
+				var state = graph.view.getState(glowCell);
+				var node = (state != null && state.shape != null) ? state.shape.node : null;
+
+				if (node != glow)
+				{
+					removeGlow();
+				}
+
+				if (node != null && node.ownerSVGElement != null)
+				{
+					if (glowFilter == null)
+					{
+						var doc = node.ownerDocument;
+						glowFilter = doc.createElementNS(mxConstants.NS_SVG, 'filter');
+						glowFilter.setAttribute('id', 'mx-present-glow-' + Editor.guid());
+						glowFilter.setAttribute('filterUnits', 'userSpaceOnUse');
+						glowFilter.setAttribute('color-interpolation-filters', 'sRGB');
+						var shadow = doc.createElementNS(mxConstants.NS_SVG, 'feDropShadow');
+						shadow.setAttribute('dx', '0');
+						shadow.setAttribute('dy', '0');
+						shadow.setAttribute('flood-color', '#1a73e8');
+						glowFilter.appendChild(shadow);
+					}
+
+					if (glowFilter.parentNode != node.ownerSVGElement)
+					{
+						node.ownerSVGElement.appendChild(glowFilter);
+					}
+
+					if (glow == null || glow.style.filter != glowCss)
+					{
+						// Workaround for references with a base tag in the page
+						var base = (mxSvgCanvas2D.prototype.useAbsoluteIds) ?
+							mxSvgCanvas2D.prototype.getBaseUrl().replace(/([\(\)])/g, '\\$1') : '';
+						var ref = 'url(' + base + '#' + glowFilter.getAttribute('id') + ')';
+						glow = node;
+						glowRestore = glow.style.filter;
+						glow.setAttribute('filter', ref);
+						glow.style.filter = ref;
+						glowCss = glow.style.filter;
+					}
+
+					updateGlow();
+				}
+			};
+
+			var setGlow = function(cell)
+			{
+				removeGlow();
+				glowCell = (graph.view.getState(cell) != null) ? cell : null;
+				applyGlow();
+				ForceExplorer.fireChange();
+			};
+
+			// Keeps the glow at the same size on the screen, also while zooming
+			graph.view.addListener(mxEvent.SCALE, updateGlow);
+			graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, updateGlow);
+
+			// Applies the glow again after the glowing cell was painted
+			var cellRendererRedraw = graph.cellRenderer.redraw;
+
+			graph.cellRenderer.redraw = function(state)
+			{
+				var result = cellRendererRedraw.apply(this, arguments);
+
+				if (glowCell != null && state.cell == glowCell)
+				{
+					applyGlow();
+				}
+
+				return result;
+			};
+
+			// Duration of the zoom transitions of the buttons
+			var zoomDuration = (ForceExplorer.isReducedMotion()) ? 0 : 300;
+
+			// Returns the point in model units for the given client coordinates
+			var getModelPoint = function(x, y)
+			{
+				var view = graph.view;
+				var pt = mxUtils.convertPoint(lightbox, x, y);
+
+				return new mxPoint(pt.x / view.scale - view.translate.x,
+					pt.y / view.scale - view.translate.y);
+			};
+
+			// Applies the given change of the view at once and transitions from
+			// the previous view with an ease-out (see Graph.transitionViewState)
+			var animateViewChange = function(change)
+			{
+				var view = graph.view;
+				var s0 = view.scale;
+				var tr0 = view.translate.clone();
+				var left = lightbox.scrollLeft;
+				var top = lightbox.scrollTop;
+				stopScroll();
+				change();
+
+				// The change of the scroll position is part of the previous translate
+				graph.transitionViewState(s0, new mxPoint(
+					tr0.x + (lightbox.scrollLeft - left) / s0,
+					tr0.y + (lightbox.scrollTop - top) / s0), zoomDuration);
+			};
+
+			// Moves the cell to the center, zooming a little if needed, and makes
+			// it glow, eg. for Select in Diagram of the explorer. Clicks only
+			// make cells glow.
+			graph.focusCell = function(cell)
+			{
+				var state = this.view.getState(cell);
+
+				if (state != null && state.shape != null && state.shape.node != null)
+				{
+					exploreCell = cell;
+
+					if (this.getFocusScale(state) != this.view.scale)
+					{
+						stopScroll();
+						this.animateViewToCell(cell, null, clampScroll);
+					}
+					else
+					{
+						var pt = clampScroll(state.getCenterX() - lightbox.clientWidth / 2,
+							state.getCenterY() - lightbox.clientHeight / 2);
+						scrollTo(pt.x, pt.y);
+					}
+				}
+
+				setGlow(cell);
+			};
+
+			// Returns true if the shape of the given cell is painted, so that its
+			// glow is visible, which is not the case for text cells without a
+			// fill and stroke, eg. the fields of a class
+			var isPainted = function(cell)
+			{
+				var state = graph.view.getState(cell);
+
+				return state != null && state.shape != null &&
+					(state.shape instanceof mxImageShape ||
+					mxUtils.getValue(state.style, mxConstants.STYLE_FILLCOLOR,
+						mxConstants.NONE) != mxConstants.NONE ||
+					mxUtils.getValue(state.style, mxConstants.STYLE_STROKECOLOR,
+						mxConstants.NONE) != mxConstants.NONE);
+			};
+
+			// Returns the cell that a click on the given cell highlights: the
+			// connector of a label of a connector, the table of a row or cell,
+			// which the table paints, the stack of an unpainted part, eg. the
+			// class of a field, or else the cell, eg. text in a lane, a frame or
+			// a group.
+			var getGlowCell = function(cell)
+			{
+				var model = graph.model;
+				var parent = model.getParent(cell);
+
+				if (model.isEdge(parent))
+				{
+					cell = parent;
+				}
+				else
+				{
+					while (model.isVertex(parent) && (graph.isTableRow(cell) ||
+						graph.isTableCell(cell) || (!isPainted(cell) &&
+						graph.isStack(parent))))
+					{
+						cell = parent;
+						parent = model.getParent(cell);
+					}
+				}
+
+				return cell;
+			};
+
+			// Returns the cell that the explore button explores after a click
+			// on the given cell: the cell or its nearest ancestor with
+			// connections, eg. the class of a field or the table of a cell.
+			var getExploreTarget = function(cell)
+			{
+				var model = graph.model;
+				var result = getGlowCell(cell);
+				var tmp = cell;
+
+				while (model.isVertex(tmp))
+				{
+					if (ForceExplorer.getConnectionCount(graph, tmp) > 0)
+					{
+						result = tmp;
+
+						break;
+					}
+
+					tmp = model.getParent(tmp);
+				}
+
+				return result;
+			};
+
+			// A click makes the cell glow without moving the view. The click
+			// handler of the lightbox ignores graph.click and handles links.
+			var down = null;
+
+			var clickListener =
+			{
+				mouseDown: function(sender, me)
+				{
+					ForceExplorer.fireInput();
+					stopScroll();
+					down = new mxPoint(me.getX(), me.getY());
+				},
+				mouseMove: function() {},
+				mouseUp: function(sender, me)
+				{
+					var evt = me.getEvent();
+					var src = mxEvent.getSource(evt);
+
+					if (down != null && Math.abs(me.getX() - down.x) <= graph.tolerance &&
+						Math.abs(me.getY() - down.y) <= graph.tolerance &&
+						(src == null || src.closest == null || src.closest('a') == null))
+					{
+						var cell = me.getCell();
+
+						// A click on the background removes the highlight
+						if (cell == null && glowCell != null)
+						{
+							setGlow(null);
+							exploreCell = null;
+						}
+						else if (cell != null && graph.getLinkForCell(cell) == null)
+						{
+							setGlow(getGlowCell(cell));
+							exploreCell = getExploreTarget(cell);
+						}
+					}
+
+					down = null;
+				}
+			};
+
+			graph.addMouseListener(clickListener);
+
+			// Double clicks do nothing and do not select the text of labels
+			graph.dblClick = function() {};
+
+			mxEvent.addListener(lightbox, 'mousedown', function(evt)
+			{
+				if (evt.detail > 1)
+				{
+					evt.preventDefault();
+				}
+			});
+
+			// Drags always move the diagram, also on labels, whose text cannot be
+			// selected, and a drag is never a click of a link in a label
+			frame.style.userSelect = 'none';
+			frame.style.webkitUserSelect = 'none';
+			lightbox.style.userSelect = 'none';
+			lightbox.style.webkitUserSelect = 'none';
+
+			graph.panningHandler.isForcePanningEvent = function(me)
+			{
+				return !mxEvent.isPopupTrigger(me.getEvent());
+			};
+
+			var pressPoint = null;
+
+			lightbox.addEventListener('pointerdown', function(evt)
+			{
+				pressPoint = new mxPoint(evt.clientX, evt.clientY);
+			}, true);
+
+			lightbox.addEventListener('click', function(evt)
+			{
+				if (evt.detail > 0 && pressPoint != null &&
+					(Math.abs(evt.clientX - pressPoint.x) > graph.tolerance ||
+					Math.abs(evt.clientY - pressPoint.y) > graph.tolerance))
+				{
+					mxEvent.consume(evt);
+				}
+			}, true);
+
 			var overflow = document.body.style.overflow;
 			document.body.style.overflow = 'hidden';
 
-			// Build custom toolbar (top-right, standard dialog style)
-			var toolbar = document.createElement('div');
-			toolbar.style.cssText = 'position:fixed;top:10px;right:10px;z-index:1000;' +
-				'display:inline-flex;align-items:center;gap:2px;' +
-				'padding:4px;white-space:nowrap;cursor:default;' +
-				'border:1px solid;border-radius:6px;' +
-				'background-color:' + (dark ? '#2a2a2a' : '#ffffff') + ';' +
-				'border-color:' + (dark ? '#505050' : '#e0e0e0') + ';' +
-				'box-shadow:0 2px 6px ' + (dark ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.1)');
-
-			var iconColor = dark ? 'invert(80%)' : 'none';
-
-			var addToolbarButton = function(fn, img, tooltip)
+			// Controls in the style of the explorer (see ForceExplorer.createButton):
+			// pages on the top left, explore and close on the top right and zoom
+			// on the bottom right
+			var createPanel = function(css)
 			{
-				var btn = document.createElement('img');
-				btn.setAttribute('src', img);
-				btn.setAttribute('title', tooltip || '');
-				btn.setAttribute('border', '0');
-				btn.style.cssText = 'width:16px;height:16px;cursor:pointer;display:block;' +
-					'padding:2px;opacity:0.6;filter:' + iconColor;
-				btn.className = 'geAdaptiveAsset';
+				var panel = document.createElement('div');
+				panel.style.cssText = 'position:fixed;z-index:1000;display:flex;gap:6px;' +
+					'align-items:center;font-family:Helvetica,Arial,sans-serif;' +
+					'color:' + ((dark) ? '#e6e6e6' : '#333333') + ';' + css;
 
-				mxEvent.addListener(btn, 'mouseenter', function()
-				{
-					btn.style.opacity = '1';
-				});
+				return panel;
+			};
 
-				mxEvent.addListener(btn, 'mouseleave', function()
-				{
-					btn.style.opacity = '0.6';
-				});
+			var topLeft = createPanel('left:14px;top:12px;');
+			var topRight = createPanel('right:14px;top:12px;');
+			var bottomRight = createPanel('right:14px;bottom:14px;flex-direction:column;');
 
-				mxEvent.addListener(btn, 'click', function(evt)
-				{
-					fn(evt);
-					mxEvent.consume(evt);
-				});
+			var createIcon = function(img)
+			{
+				var icon = document.createElement('img');
+				icon.setAttribute('src', img);
+				icon.style.cssText = 'width:20px;height:20px;filter:' +
+					((dark) ? 'invert(90%)' : 'none');
 
-				toolbar.appendChild(btn);
+				return icon;
+			};
+
+			var addButton = function(panel, content, tooltip, fn)
+			{
+				var btn = ForceExplorer.createButton(content, tooltip, fn);
+				panel.appendChild(btn);
 
 				return btn;
 			};
 
-			// Page navigation dropdown (added after data is loaded, when page count is known)
+			// Page navigation and the name of the page (added after data is
+			// loaded, when page count is known)
+			var pageName = document.createElement('div');
+			pageName.style.cssText = 'font-size:16px;font-weight:bold;';
+
+			var updatePageName = function()
+			{
+				pageName.textContent = (ui.currentPage != null) ?
+					ui.getShortPageName(ui.currentPage) : '';
+			};
+
 			var addPageNav = function()
 			{
 				if (ui.pages != null && ui.pages.length > 1)
 				{
-					var pageBtn = addToolbarButton(function(evt)
+					addButton(topLeft, createIcon(Editor.chevronDownImage),
+						mxResources.get('pages'), function(evt)
 					{
+						// Below the button, also for the keyboard
+						var r = evt.currentTarget.getBoundingClientRect();
+
 						ui.showPopupMenu(function(menu, parent)
 						{
 							for (var i = 0; i < ui.pages.length; i++)
@@ -4079,69 +4627,419 @@
 									}
 								})(i);
 							}
-						}, mxEvent.getClientX(evt), mxEvent.getClientY(evt), evt);
-					}, Editor.chevronDownImage, mxResources.get('pages'));
+						}, r.left, r.bottom + 4, evt);
+					});
 
-					toolbar.insertBefore(pageBtn, toolbar.firstChild);
+					topLeft.appendChild(pageName);
+					updatePageName();
 				}
 			};
 
-			// Zoom buttons
-			addToolbarButton(function()
+			// Laser pointer: a red dot instead of the mouse cursor over the diagram,
+			// which the collaborators that follow a presenter see as well (see
+			// EditorUi.getSharedLaser)
+			var createLaserDot = function()
 			{
-				graph.zoomOut();
-				ui.chromelessResize(false);
-			}, Editor.zoomOutImage, mxResources.get('zoomOut'));
+				var dot = document.createElement('div');
+				dot.style.cssText = 'position:absolute;z-index:1001;width:12px;height:12px;' +
+					'margin:-6px 0 0 -6px;border-radius:50%;pointer-events:none;display:none;' +
+					'background:radial-gradient(circle, #ffd6d6 0%, #ff2020 45%, #e00000 100%);' +
+					'box-shadow:0 0 8px 3px rgba(255, 0, 0, 0.55)';
+				frame.appendChild(dot);
 
-			addToolbarButton(function()
-			{
-				graph.zoomIn();
-				ui.chromelessResize(false);
-			}, Editor.zoomInImage, mxResources.get('zoomIn'));
+				return dot;
+			};
 
-			addToolbarButton(function()
+			var laserOn = false;
+			var laserDot = createLaserDot();
+			var laserClient = null;
+			var laserPoint = null;
+			var remoteDot = createLaserDot();
+			var remotePoint = null;
+			var remoteThread = null;
+			var lightboxCursor = null;
+
+			// Moves the laser pointer to the client point, which is a new point
+			// of the diagram after scrolling and zooming
+			var updateLaser = function()
 			{
-				if (graph.view.scale == 1)
+				var pt = (laserOn && laserClient != null) ?
+					getModelPoint(laserClient.x, laserClient.y) : null;
+
+				if (pt != null)
 				{
-					ui.lightboxFit();
+					laserDot.style.left = laserClient.x + 'px';
+					laserDot.style.top = laserClient.y + 'px';
+					laserDot.style.display = '';
 				}
 				else
 				{
-					graph.zoomTo(1);
+					laserDot.style.display = 'none';
 				}
 
-				ui.chromelessResize(false);
-			}, Editor.zoomFitImage, mxResources.get('fit'));
+				if ((pt == null) != (laserPoint == null) || (pt != null &&
+					(pt.x != laserPoint.x || pt.y != laserPoint.y)))
+				{
+					laserPoint = pt;
+					editorUi.laserChanged();
+				}
+			};
 
-			addToolbarButton(function()
+			var updateRemoteLaser = function()
+			{
+				if (remotePoint != null && loaded && !closing)
+				{
+					var view = graph.view;
+					var s = view.scale;
+					var r = lightbox.getBoundingClientRect();
+					remoteDot.style.left = (r.left + (remotePoint.x + view.translate.x) *
+						s - lightbox.scrollLeft) + 'px';
+					remoteDot.style.top = (r.top + (remotePoint.y + view.translate.y) *
+						s - lightbox.scrollTop) + 'px';
+					remoteDot.style.display = '';
+				}
+				else
+				{
+					remoteDot.style.display = 'none';
+				}
+			};
+
+			var updateLasers = function()
+			{
+				updateLaser();
+				updateRemoteLaser();
+			};
+
+			mxEvent.addListener(lightbox, 'scroll', updateLasers);
+			graph.view.addListener(mxEvent.SCALE, updateLasers);
+			graph.view.addListener(mxEvent.TRANSLATE, updateLasers);
+			graph.view.addListener(mxEvent.SCALE_AND_TRANSLATE, updateLasers);
+
+			lightbox.addEventListener('pointermove', function(evt)
+			{
+				if (laserOn)
+				{
+					// Link handling sets the cursor of the container
+					if (lightbox.style.cursor != 'none')
+					{
+						lightbox.style.cursor = 'none';
+					}
+
+					laserClient = new mxPoint(evt.clientX, evt.clientY);
+					updateLaser();
+				}
+			});
+
+			lightbox.addEventListener('pointerleave', function()
+			{
+				laserClient = null;
+				updateLaser();
+			});
+
+			// Cells have no cursor while the laser pointer is on
+			var graphGetCursorForCell = graph.getCursorForCell;
+
+			graph.getCursorForCell = function(cell)
+			{
+				return (laserOn) ? 'none' : graphGetCursorForCell.apply(this, arguments);
+			};
+
+			var laserIcon = document.createElement('div');
+			laserIcon.style.cssText = 'width:10px;height:10px;border-radius:50%;' +
+				'background-color:#ff2020;box-shadow:0 0 4px 1px rgba(255, 0, 0, 0.5)';
+
+			var laserButton = addButton(topRight, laserIcon,
+				mxResources.get('laserPointer'), function()
+			{
+				laserOn = !laserOn;
+				laserButton.setAttribute('aria-pressed', (laserOn) ? 'true' : 'false');
+				laserButton.style.backgroundColor = (laserOn) ?
+					'rgba(255, 32, 32, 0.25)' : 'rgba(127, 127, 127, 0.12)';
+
+				if (laserOn)
+				{
+					lightboxCursor = lightbox.style.cursor;
+					lightbox.style.cursor = 'none';
+				}
+				else
+				{
+					lightbox.style.cursor = lightboxCursor;
+				}
+
+				graph.view.states.visit(function(key, state)
+				{
+					state.setCursor(graph.getCursorForCell(state.cell));
+				});
+
+				updateLaser();
+			});
+
+			laserButton.setAttribute('aria-pressed', 'false');
+
+			// Explores the current cell, shown if a cell has connections. Hidden
+			// for the classic Explore view (forceExplore is false), which opens
+			// behind the presentation.
+			var exploreButton = addButton(topRight, createIcon(Editor.exploreImage),
+				mxResources.get('explore'), function()
+			{
+				var cell = ui.getExploreCell(exploreCell, true);
+
+				if (cell != null)
+				{
+					stopScroll();
+					Graph.exploreFromCell(graph, cell);
+				}
+			});
+
+			var updateExploreButton = function()
+			{
+				exploreButton.style.display = (Editor.forceExplore && ui.getExploreCell(
+					exploreCell, true) != null) ? 'flex' : 'none';
+			};
+
+			exploreButton.style.display = 'none';
+
+			ui.editor.addListener('pageSelected', function()
+			{
+				setGlow(null);
+				exploreCell = null;
+				updateExploreButton();
+				updatePageName();
+			});
+
+			var closeButton = addButton(topRight, '\u2715', mxResources.get('close') +
+				' (Escape)', function()
 			{
 				ui.destroy();
-			}, Editor.closeImage, mxResources.get('close') + ' (Escape)');
+			});
 
-			// Cleanup function
+			closeButton.style.fontSize = '14px';
+
+			// Zoom buttons
+			addButton(bottomRight, '+', mxResources.get('zoomIn'), function()
+			{
+				animateViewChange(function()
+				{
+					graph.zoomIn();
+					ui.chromelessResize(false);
+				});
+			});
+
+			addButton(bottomRight, '\u2212', mxResources.get('zoomOut'), function()
+			{
+				animateViewChange(function()
+				{
+					graph.zoomOut();
+					ui.chromelessResize(false);
+				});
+			});
+
+			addButton(bottomRight, createIcon(Editor.zoomFitImage), mxResources.get('fit'), function()
+			{
+				animateViewChange(function()
+				{
+					if (graph.view.scale == 1)
+					{
+						ui.lightboxMaxFitScale = maxFitScale;
+
+						try
+						{
+							ui.lightboxFit();
+						}
+						finally
+						{
+							ui.lightboxMaxFitScale = 1;
+						}
+					}
+					else
+					{
+						graph.zoomTo(1);
+					}
+
+					ui.chromelessResize(false);
+				});
+			});
+
+			// State for the collaborators that follow this client (see
+			// EditorUi.getSharedViewMode): the page, the visible area in model
+			// units and the glowing cell
+			var loaded = false;
+			var closing = false;
+			var pendingState = null;
+			var lastState = null;
+
+			var presentation = {graph: graph, ui: ui};
+
+			presentation.isShown = function()
+			{
+				return loaded && !closing;
+			};
+
+			presentation.getSharedState = function()
+			{
+				var view = graph.view;
+				var s = view.scale;
+
+				return {page: (ui.currentPage != null) ? ui.currentPage.getId() : null,
+					x: Math.round(lightbox.scrollLeft / s - view.translate.x),
+					y: Math.round(lightbox.scrollTop / s - view.translate.y),
+					w: Math.round(lightbox.clientWidth / s),
+					h: Math.round(lightbox.clientHeight / s),
+					cell: (glowCell != null) ? glowCell.id : null};
+			};
+
+			// Shows the state of a presenter, which comes from a collaborator
+			presentation.setSharedState = function(state)
+			{
+				if (!loaded)
+				{
+					pendingState = state;
+				}
+				else if (state != null && typeof state === 'object' && !closing)
+				{
+					if (state.page != null && ui.pages != null && ui.currentPage != null &&
+						String(state.page) != ui.currentPage.getId())
+					{
+						var page = ui.getPageById(String(state.page));
+
+						if (page != null)
+						{
+							ui.selectPage(page);
+							ui.lightboxFit();
+							ui.chromelessResize();
+							lastState = null;
+						}
+					}
+
+					var x = parseFloat(state.x);
+					var y = parseFloat(state.y);
+					var w = parseFloat(state.w);
+					var h = parseFloat(state.h);
+					var key = [x, y, w, h].join(',');
+
+					if (key != lastState && isFinite(x) && isFinite(y) && isFinite(w) &&
+						isFinite(h) && w > 0 && h > 0 && lightbox.clientWidth > 0)
+					{
+						lastState = key;
+						stopScroll();
+						graph.animateView(new mxPoint(x + w / 2, y + h / 2), Math.max(0.05,
+							Math.min(8, Math.min(lightbox.clientWidth / w,
+							lightbox.clientHeight / h))), 300);
+					}
+
+					var cell = (state.cell != null) ? graph.model.getCell(String(state.cell)) : null;
+
+					if (((cell instanceof mxCell) ? cell : null) != glowCell)
+					{
+						setGlow((cell instanceof mxCell) ? cell : null);
+					}
+				}
+			};
+
+			// The point of the laser pointer in model units or null
+			presentation.getLaser = function()
+			{
+				return laserPoint;
+			};
+
+			// Shows the laser pointer of a presenter at the given point in model
+			// units, which comes from a collaborator, or hides it. It is hidden
+			// without updates, which the presenter sends at least every 2 s.
+			presentation.setRemoteLaser = function(pt)
+			{
+				remotePoint = pt;
+				window.clearTimeout(remoteThread);
+				remoteThread = null;
+
+				if (pt != null)
+				{
+					remoteThread = window.setTimeout(function()
+					{
+						remotePoint = null;
+						updateRemoteLaser();
+					}, 3000);
+				}
+
+				updateRemoteLaser();
+			};
+
+			presentation.close = function()
+			{
+				ui.destroy();
+			};
+
+			editorUi.presentation = presentation;
+
+			// Cleanup function: the editor gets the input at once and the frame
+			// zooms out before it is removed
 			var destroy = ui.destroy;
 
 			ui.destroy = function()
 			{
-				mxEvent.removeListener(document.documentElement, 'keydown', keydownHandler);
-				editorUi.keyHandler.setEnabled(keyHandlerEnabled);
-				document.body.removeChild(backdrop);
-				document.body.removeChild(toolbar);
-				document.body.style.overflow = overflow;
-
-				for (var i = 0; i < paramKeys.length; i++)
+				if (!closing)
 				{
-					urlParams[paramKeys[i]] = savedParams[paramKeys[i]];
-				}
+					var args = arguments;
+					closing = true;
 
-				destroy.apply(this, arguments);
+					if (editorUi.presentation == presentation)
+					{
+						editorUi.presentation = null;
+					}
+
+					ForceExplorer.fireChange();
+					window.clearTimeout(remoteThread);
+					laserOn = false;
+					updateLaser();
+					mxEvent.removeListener(document.documentElement, 'keydown', keydownHandler);
+					graph.removeMouseListener(clickListener);
+					stopScroll();
+					editorUi.keyHandler.setEnabled(keyHandlerEnabled);
+					frame.style.pointerEvents = 'none';
+
+					// Gives the focus back if it was in the presentation
+					var active = document.activeElement;
+
+					if (active == null || active == document.body || frame.contains(active))
+					{
+						ForceExplorer.restoreFocus(previousFocus);
+					}
+
+					// Restores the global state at once, as another presentation may
+					// be opened during the animation and would save this state
+					document.body.style.overflow = overflow;
+
+					for (var i = 0; i < paramKeys.length; i++)
+					{
+						urlParams[paramKeys[i]] = savedParams[paramKeys[i]];
+					}
+
+					ForceExplorer.animateFrame(frame, false, getOrigin(), 220, function()
+					{
+						document.body.removeChild(frame);
+						destroy.apply(ui, args);
+					}, ForceExplorer.isReducedMotion() || frame.style.opacity == '0');
+				}
 			};
 
 			var keydownHandler = function(evt)
 			{
-				if (evt.keyCode == 27 /* Escape */)
+				ForceExplorer.fireInput();
+
+				if (ForceExplorer.handleButtonKeys(frame, evt))
 				{
-					ui.destroy();
+					// handled
+				}
+				else if (evt.keyCode == 27 /* Escape */)
+				{
+					// Closes the page menu first
+					if (ui.currentMenu != null)
+					{
+						ui.hideCurrentMenu();
+					}
+					else
+					{
+						ui.destroy();
+					}
 				}
 				else if ((evt.keyCode == 37 || evt.keyCode == 39) && !mxEvent.isShiftDown(evt) &&
 					(mxEvent.isControlDown(evt) || (mxClient.IS_MAC && mxEvent.isMetaDown(evt))) &&
@@ -4167,8 +5065,10 @@
 
 			mxEvent.addListener(document.documentElement, 'keydown', keydownHandler);
 
-			document.body.appendChild(lightbox);
-			document.body.appendChild(toolbar);
+			frame.appendChild(lightbox);
+			frame.appendChild(topLeft);
+			frame.appendChild(topRight);
+			frame.appendChild(bottomRight);
 
 			window.setTimeout(function()
 			{
@@ -4179,8 +5079,32 @@
 					// Add page navigation now that pages are loaded
 					addPageNav();
 
+					// Starts at the cell selected in the editor
+					var selected = editorUi.editor.graph.getSelectionCell();
+					exploreCell = (selected != null) ? graph.model.getCell(selected.id) : null;
+					updateExploreButton();
+
 					ui.lightboxFit();
 					ui.chromelessResize();
+
+					ForceExplorer.animateFrame(frame, true, getOrigin(), 300,
+						null, ForceExplorer.isReducedMotion());
+
+					// Applies the state of a followed presenter that came in while loading
+					loaded = true;
+
+					if (pendingState != null)
+					{
+						presentation.setSharedState(pendingState);
+						pendingState = null;
+					}
+
+					if (editorUi.isFollowing() && editorUi.lastSharedViewMode != null)
+					{
+						editorUi.applySharedViewMode(editorUi.lastSharedViewMode);
+					}
+
+					ForceExplorer.fireChange();
 				}
 				catch (e)
 				{
@@ -4248,7 +5172,7 @@
 		// cells inside it are added, connected or resized, so the diagram is
 		// assembled directly on the canvas with the full editing UX instead.
 		// Styles and seed cells mirror the Advanced sidebar layout containers.
-		var addInsertLayoutAction = function(method, containerStyle, edgeStyle, seed)
+		var addInsertLayoutAction = function(method, def, edgeStyle, seed)
 		{
 			editorUi.actions.put(method, new Action(mxResources.get(method), function()
 			{
@@ -4260,17 +5184,19 @@
 					// layout manager lays the seed out on insert, anchored
 					// at the seeds' top-left.
 					var container = new mxCell('',
-						new mxGeometry(0, 0, 0, 0), containerStyle);
+						new mxGeometry(0, 0, 0, 0), def.style);
 					container.vertex = true;
 
 					var pt = graph.getFreeInsertPoint();
 					var vertices = [];
 
+					// The first seed cell is the root
 					for (var i = 0; i < seed.nodes.length; i++)
 					{
-						var v = new mxCell(seed.nodes[i], new mxGeometry(
-							pt.x + 20, pt.y + 20, 100, 40),
-							'whiteSpace=wrap;html=1;');
+						var root = i == 0 && def.rootStyle != null;
+						var size = (!root && def.vertexSize != null) ? def.vertexSize : [100, 40];
+						var v = new mxCell(seed.nodes[i], new mxGeometry(pt.x + 20, pt.y + 20,
+							size[0], size[1]), (root) ? def.rootStyle : def.vertexStyle);
 						v.vertex = true;
 						vertices.push(container.insert(v));
 					}
@@ -4298,11 +5224,15 @@
 		var treeSeed = {nodes: ['Root', 'Child 1', 'Child 2'], edges: [[0, 1], [0, 2]]};
 		var flowSeed = {nodes: ['Start', 'Task', 'Task', 'End'],
 			edges: [[0, 1], [0, 2], [1, 3], [2, 3]]};
+		var balloonSeed = {nodes: ['Root', 'Child 1', 'Child 2', 'Child 3', 'Child 1.1',
+			'Child 1.2', 'Child 2.1', 'Child 2.2', 'Child 3.1', 'Child 3.2'],
+			edges: [[0, 1], [0, 2], [0, 3], [1, 4], [1, 5], [2, 6], [2, 7], [3, 8], [3, 9]]};
 
 		var addLayoutContainerAction = function(name, seed)
 		{
-			addInsertLayoutAction(name, Menus.layoutContainers[name].style,
-				Menus.layoutContainerEdgeStyle, seed);
+			var def = Menus.layoutContainers[name];
+			addInsertLayoutAction(name, def, (def.edgeStyle != null) ?
+				def.edgeStyle : Menus.layoutContainerEdgeStyle, seed);
 		};
 
 		addLayoutContainerAction('horizontalFlow', flowSeed);
@@ -4310,6 +5240,9 @@
 		addLayoutContainerAction('horizontalTree', treeSeed);
 		addLayoutContainerAction('verticalTree', treeSeed);
 		addLayoutContainerAction('radialTree', treeSeed);
+		addLayoutContainerAction('balloonTree', balloonSeed);
+		addLayoutContainerAction('mindmap', {nodes: ['Central Idea', 'Topic', 'Topic',
+			'Topic', 'Topic'], edges: [[0, 1], [0, 2], [0, 3], [0, 4]]});
 		addLayoutContainerAction('organic', treeSeed);
 		addLayoutContainerAction('circle', treeSeed);
 
@@ -4519,6 +5452,13 @@
 
 		this.put('insert', new Menu(mxUtils.bind(this, function(menu, parent)
 		{
+			// Shape picker at the location of the background context menu
+			// (see addPopupMenuItems in EditorUi)
+			if (!Editor.passiveScroll && graph._contextMenuScreenPoint != null)
+			{
+				editorUi.menus.addMenuItems(menu, ['showShapePicker', '-'], parent);
+			}
+
 			if (Editor.passiveScroll)
 			{
 				editorUi.menus.addMenuItems(menu, ['showShapePicker'], parent);
@@ -4601,8 +5541,8 @@
 		this.put('insertLayout', new Menu(mxUtils.bind(this, function(menu, parent)
 		{
 			this.addMenuItems(menu, ['horizontalFlow', 'verticalFlow', '-',
-				'horizontalTree', 'verticalTree', 'radialTree', '-',
-				'organic', 'circle'], parent);
+				'horizontalTree', 'verticalTree', 'radialTree', 'balloonTree', 'mindmap', '-',
+				'organic', 'circle', '-', 'fromOutline'], parent);
 		})));
 
 		editorUi.actions.put('csv', new Action(mxResources.get('csv') + '...', function()
@@ -5123,7 +6063,7 @@
 		viewPanelsMenu.funct = function(menu, parent)
 		{
 			editorUi.menus.addMenuItems(menu, ['toggleShapes', 'format', 'ruler', '-',
-				'findReplace', 'layers', 'tags', 'outline'], parent);
+				'findReplace', 'layers', 'tags', 'outline', 'textOutline'], parent);
 
 			// Comments opens a window so it shares the section with the panels
 			if (editorUi.commentsSupported())
@@ -5160,7 +6100,7 @@
 				}
 				
 				editorUi.menus.addMenuItems(menu, ['-', 'findReplace',
-					'layers', 'tags', 'outline'], parent);
+					'layers', 'tags', 'outline', 'textOutline'], parent);
 				
 				// Comments opens a window so it shares the section with the panels
 				if (editorUi.commentsSupported())
@@ -5173,7 +6113,7 @@
 			}
 			else
 			{
-				this.addMenuItems(menu, (['format', 'outline', 'layers', 'tags']).
+				this.addMenuItems(menu, (['format', 'outline', 'textOutline', 'layers', 'tags']).
 					concat((editorUi.commentsSupported()) ?
 					['comments', '-'] : ['-']));
 				
@@ -5240,7 +6180,11 @@
 				if (editorUi.pages.length > 1)
 				{
 					editorUi.menus.addSubmenu('movePage', menu, parent, mxResources.get('move'));
-					menu.addSeparator(parent);
+				}
+
+				if (editorUi.isPageGroupsEnabled())
+				{
+					editorUi.menus.addSubmenu('pageGroup', menu, parent, mxResources.get('group'));
 				}
 
 				this.addMenuItems(menu, ['-', 'duplicatePage'], parent);
@@ -5270,16 +6214,30 @@
 			
 			if (editorUi.pages != null)
 			{
+				// Pages in groups are added to a submenu for each group
+				var groups = editorUi.isPageGroupsEnabled();
+				var groupItem = null;
+				var lastGroup = null;
+
 				for (var i = 0; i < editorUi.pages.length; i++)
 				{
 					(mxUtils.bind(this, function(index)
 					{
+						var group = (groups) ? editorUi.pages[index].getGroup() : null;
 						var item = null;
-					
+
+						if (group != lastGroup)
+						{
+							groupItem = (group != null) ? menu.addItem(group, null, null, parent) : null;
+							lastGroup = group;
+						}
+
+						var itemParent = (groupItem != null) ? groupItem : parent;
+
 						if (editorUi.pages[index] == page && !editorUi.editor.graph.isLightboxView() &&
 							editorUi.editor.graph.isEnabled())
 						{
-							item = editorUi.menus.addSubmenu('currentPage', menu, parent,
+							item = editorUi.menus.addSubmenu('currentPage', menu, itemParent,
 								editorUi.getShortPageName(page));
 						}
 						else
@@ -5288,7 +6246,7 @@
 								null, mxUtils.bind(this, function()
 							{
 								editorUi.selectPage(editorUi.pages[index]);
-							}), parent);
+							}), itemParent);
 						}
 
 						var id = editorUi.pages[index].getId();
@@ -5296,10 +6254,15 @@
 							' (' + (index + 1) + '/' + editorUi.pages.length + ')' +
 							((id != null) ? ' [' + id + ']' : ''));
 						
-						// Adds checkmark to current page
+						// Adds checkmark to current page and its group
 						if (editorUi.pages[index] == page)
 						{
 							menu.addCheckmark(item, Editor.checkmarkImage);
+
+							if (groupItem != null)
+							{
+								menu.addCheckmark(groupItem, Editor.checkmarkImage);
+							}
 						}
 					}))(i);
 				}
@@ -5307,7 +6270,7 @@
 				if (!editorUi.editor.graph.isLightboxView())
 				{
 					menu.addSeparator(parent);
-					this.addMenuItems(menu, ['sortPages'], parent);
+					this.addMenuItems(menu, ['sortPages', 'pageGroups'], parent);
 
 					menu.addItem(mxResources.get('deleteAll'), null, mxUtils.bind(this, function()
 					{
@@ -5559,12 +6522,61 @@
 						{
 							menu.addItem(editorUi.getShortPageName(editorUi.pages[index]), null, function()
 							{
-								editorUi.movePage(current, index);
+								var target = editorUi.pages[index];
+
+								// Takes the place and the group of the page
+								if (editorUi.isPageGroupsEnabled() && target != null)
+								{
+									editorUi.movePageToGroup(current, index, target.getGroup());
+								}
+								else
+								{
+									editorUi.movePage(current, index);
+								}
+
 								editorUi.scrollToPage(currentPage, true);
 							}, parent);
 						})(i);
 					}
 				}
+			}
+		})));
+
+		this.put('pageGroup', new Menu(mxUtils.bind(this, function(menu, parent)
+		{
+			var page = editorUi.currentPage;
+
+			if (page != null)
+			{
+				var groups = editorUi.getPageGroups();
+
+				for (var i = 0; i < groups.length; i++)
+				{
+					(function(group)
+					{
+						var item = menu.addItem(group, null, function()
+						{
+							editorUi.setPageGroup(page, group);
+						}, parent);
+
+						if (page.getGroup() == group)
+						{
+							menu.addCheckmark(item, Editor.checkmarkImage);
+						}
+					})(groups[i]);
+				}
+
+				menu.addSeparator(parent);
+
+				menu.addItem(mxResources.get('new') + '...', null, function()
+				{
+					editorUi.addPageGroup(page);
+				}, parent);
+
+				menu.addItem(mxResources.get('removeFromGroup'), null, function()
+				{
+					editorUi.setPageGroup(page, null);
+				}, parent, null, page.getGroup() != null);
 			}
 		})));
 
@@ -5593,6 +6605,8 @@
 			{
 				this.addMenuItem(menu, 'presentationMode', parent);
 			}
+
+			this.addMenuItem(menu, 'exploreMode', parent);
 
 			if (editorUi.getMainUser() != null)
 			{
@@ -5647,7 +6661,7 @@
 				if (Editor.currentTheme == 'min')
 				{
 					editorUi.menus.addMenuItems(menu, ['toggleShapes', 'format',
-						'layers', 'tags', '-', 'findReplace'], parent);
+						'layers', 'tags', 'textOutline', '-', 'findReplace'], parent);
 			
 					if (editorUi.commentsSupported())
 					{
@@ -5679,7 +6693,7 @@
 				}
 
 				editorUi.menus.addMenuItems(menu, ['toggleShapes', 'format',
-					'layers', 'tags', '-'], parent);
+					'layers', 'tags', 'textOutline', '-'], parent);
 				editorUi.menus.addMenuItems(menu, ['pageSetup'], parent);
 			}
 			else if (Editor.currentTheme != 'min')
@@ -5891,6 +6905,11 @@
 						editorUi.getServiceName() == 'draw.io' && !navigator.standalone)
 					{
 						this.addMenuItem(menu, 'presentationMode', parent);
+					}
+
+					if (Editor.currentTheme == 'sketch' || Editor.currentTheme == 'min')
+					{
+						this.addMenuItem(menu, 'exploreMode', parent);
 					}
 				}
 

@@ -16,6 +16,14 @@
  * the file's MD5; .html entries append the release version so documents are
  * re-fetched once per release (a cached response pins the HTTP headers it was
  * fetched with, e.g. the CSP, which a header-only change never invalidates).
+ * Entries with an integrity value (all but documents) are only stored with
+ * the bytes of their revision, also when they are already cached under it,
+ * so the cache holds one release (see fetchEntry and isIntact; not on
+ * development hosts, see cacheKeysToIntegrity). Installs are
+ * all or nothing until they have failed for FALLBACK_DAYS: then they keep
+ * what they stored, activate, take the rest from the network (or the
+ * previous revision when the network fails, see respondPrecache) and
+ * report it once to the host's /log (see readFailures and reportFallback).
  * Cache keys resolve against the registration scope, network fetches against
  * the script's own directory: registered as stable/service-worker.js with
  * scope '/', this worker fetches via /stable/ and serves unprefixed.
@@ -26,23 +34,23 @@ self.skipWaiting();
 var MANIFEST = [
   {"url":"js/bootstrap.js","revision":"49f4463ed6fc45822456e865fef624c7"},
   {"url":"js/main.js","revision":"a8d40469d3d72ab4b11059362f3dd825"},
-  {"url":"js/app.min.js","revision":"e92f0adf6c15634765b564421d63023f"},
-  {"url":"js/extensions.min.js","revision":"38d3dea5d6ed4990b38e695023c9abc6"},
-  {"url":"js/plantuml/drawio-plantuml.min.js","revision":"4ccf92a78160a3ca8a4235d518eae9c1"},
-  {"url":"js/orgchart.min.js","revision":"619d8c4dab47b81868916df31f55478b"},
-  {"url":"js/stencils.min.js","revision":"ed29a54cd418b1888595b2d10c53a1b5"},
-  {"url":"js/shapes-14-6-5.min.js","revision":"cf6791a3ec6c78d6cd49664fce2bbd6c"},
+  {"url":"js/app.min.js","revision":"7217de316b39b52fd61e22c9d1107527"},
+  {"url":"js/extensions.min.js","revision":"fca4c2f0f710efe4c4c022793f4abe52"},
+  {"url":"js/plantuml/drawio-plantuml.min.js","revision":"894899d30e0b5fd13e9cd062b905fcdc"},
+  {"url":"js/orgchart.min.js","revision":"26fd8dcc8eda1ab1ef58b47b933dcadb"},
+  {"url":"js/stencils.min.js","revision":"bb00e15579670336a76b15e75ccf9713"},
+  {"url":"js/shapes-14-6-5.min.js","revision":"c4f48e036dcd5965fa77aa016f042fad"},
   {"url":"js/math-print.js","revision":"6e1ff765ea66d2447c04b269cbefbb97"},
-  {"url":"index.html","revision":"37d99867f01777601ef92aa76c1590aa-32.5.5"},
-  {"url":"open.html","revision":"d71816b3b00e769fc6019fcdd6921662-32.5.5"},
-  {"url":"shortcuts.svg","revision":"36cad9eb24e20462772044d5acd7fe3f"},
+  {"url":"index.html","revision":"37d99867f01777601ef92aa76c1590aa-32.6.9"},
+  {"url":"open.html","revision":"d71816b3b00e769fc6019fcdd6921662-32.6.9"},
+  {"url":"shortcuts.svg","revision":"d0c1ef16b48562b064d9557c49484cd7"},
   {"url":"styles/fonts/ArchitectsDaughter-Regular.ttf","revision":"31c2153c0530e32553b31a49b3d70736"},
-  {"url":"styles/grapheditor.css","revision":"bae3f03cdf201b1395146f644b63980c"},
+  {"url":"styles/grapheditor.css","revision":"90f1ef545e038ffd81d983da9897ecea"},
   {"url":"styles/high-contrast.css","revision":"0c0219b1016c8bd6bbf859cfd53b5058"},
   {"url":"js/onedrive/OneDrive.js","revision":"e863f5e6833892f22492211663e3efe9"},
-  {"url":"js/viewer-static.min.js","revision":"fb4446ad6a7730e6db468eecdc27ee23"},
+  {"url":"js/viewer-static.min.js","revision":"ac24237234e1f8818435a40ba83e9c97"},
   {"url":"math4/es5/drawio-mathjax.min.js","revision":"a6ac5a84944a345c72b79df99146d038"},
-  {"url":"resources/dia.txt","revision":"a91fd95299c126273374cdbfed2c76d7"},
+  {"url":"resources/dia.txt","revision":"74a61460e147ce9e0fb062a3ec8dacb7"},
   {"url":"favicon.ico","revision":"b2bf17349e4b50ce4ba311f079f8bf7d"},
   {"url":"images/manifest.json","revision":"840dccdf2df72f46a63fb3b32ab6100e"},
   {"url":"images/logo.png","revision":"e4e0d092abdb1e668b5ec41a7fe0713c"},
@@ -83,64 +91,64 @@ var MANIFEST = [
 // are derived exactly like MANIFEST entries, so entries that move between
 // the two lists keep their cached bytes.
 var LAZY_MANIFEST = [
-  {"url":"resources/dia_am.txt","revision":"94b3ab749e079dff3043721fa1fdb156"},
-  {"url":"resources/dia_ar.txt","revision":"fefbd7443f85f4265aa07442a9ddc5e3"},
-  {"url":"resources/dia_bg.txt","revision":"25b9fd722dada4ffcecec6ee197418eb"},
-  {"url":"resources/dia_bn.txt","revision":"4bc80f8fd0986efc2d1d1c167db67593"},
-  {"url":"resources/dia_bs.txt","revision":"f5984b76beb2dec5727b90c1af80f5e2"},
-  {"url":"resources/dia_ca.txt","revision":"b3ec987915c9c0c7407621c77ef7dfd0"},
-  {"url":"resources/dia_cs.txt","revision":"d1fb573d50caeee354b951ac13db0a63"},
-  {"url":"resources/dia_da.txt","revision":"b458776da8874faaaea7e055d286db0a"},
-  {"url":"resources/dia_de.txt","revision":"74477edeaf93b30a6e4064acacc2f4ab"},
-  {"url":"resources/dia_el.txt","revision":"547cf81d0e8e240458e596064a40f618"},
-  {"url":"resources/dia_eo.txt","revision":"d8a0f6199c6db7b4fa5d45e486cf47a8"},
-  {"url":"resources/dia_es.txt","revision":"ffa51df2d8c8f8afbdac578d0a398b3b"},
-  {"url":"resources/dia_et.txt","revision":"8a4bf5843f0d9fd7f26e9ecaac6f37cc"},
-  {"url":"resources/dia_eu.txt","revision":"3e3d9f041d5552f97baed5cc85ab8c08"},
-  {"url":"resources/dia_fa.txt","revision":"f25e3945833879d10c02925f0014f1bd"},
-  {"url":"resources/dia_fi.txt","revision":"27a33f3728e5b074d62862dca540c88d"},
-  {"url":"resources/dia_fil.txt","revision":"3c52a7af62696e7b773e24f5c30af4e6"},
-  {"url":"resources/dia_fr.txt","revision":"7506f705f4ee215bd546af5b62b24a86"},
-  {"url":"resources/dia_gl.txt","revision":"66b44bd04915d534aed96886fe48ac27"},
-  {"url":"resources/dia_gu.txt","revision":"10b4e6f10bb35930e2f957fdb6156591"},
-  {"url":"resources/dia_he.txt","revision":"a291d0d4f9a659f73d50f58d396b9e55"},
-  {"url":"resources/dia_hi.txt","revision":"ad35c65d217a9750207b0f246b661eb5"},
-  {"url":"resources/dia_hr.txt","revision":"69169b739acfab05d4405fe179fd0cdf"},
-  {"url":"resources/dia_hu.txt","revision":"d39031f3327a94dc96d6cb8bd93ce12b"},
-  {"url":"resources/dia_i18n.txt","revision":"42b80039c8d4dff3dd4bd89e1ab3a582"},
-  {"url":"resources/dia_id.txt","revision":"a21d0d422a22d6e3dc300a30dc6cd4d6"},
-  {"url":"resources/dia_it.txt","revision":"24322762f35b72d54d9aeda66d975c8c"},
-  {"url":"resources/dia_ja.txt","revision":"5fda111f0c8d996d1e0d8fc02d093e7c"},
-  {"url":"resources/dia_kl.txt","revision":"e15ab8ccd33969d9196d91483a0831ba"},
-  {"url":"resources/dia_kn.txt","revision":"66fd20ccb0897f85217af80411cbeee1"},
-  {"url":"resources/dia_ko.txt","revision":"ea2df175b35d4b8f47eb58d1501cf080"},
-  {"url":"resources/dia_lt.txt","revision":"2e4d94dea71c127d0a427bec0d83a81f"},
-  {"url":"resources/dia_lv.txt","revision":"8628291d0570ba247027563cc4b5c642"},
-  {"url":"resources/dia_ml.txt","revision":"2a4326cc644634367fecb46a215c0de1"},
-  {"url":"resources/dia_mr.txt","revision":"e5eb0c6ddbfa73f64f0e37bf93e69fcb"},
-  {"url":"resources/dia_ms.txt","revision":"db6c39f846f7d0f298900cb408c8b2ba"},
-  {"url":"resources/dia_my.txt","revision":"2d742e9dcf404cb80d4a898e62114253"},
-  {"url":"resources/dia_nl.txt","revision":"95f4e2626247946586b2a55e2371e13f"},
-  {"url":"resources/dia_no.txt","revision":"769d366b4a286517569e775a7f6be305"},
-  {"url":"resources/dia_pl.txt","revision":"5564684e7941a8ea7de4bda868e7cb7b"},
-  {"url":"resources/dia_pt.txt","revision":"4e1423f5fb5b731eaeba141a72242af2"},
-  {"url":"resources/dia_pt-br.txt","revision":"aa88bb960ff0e5d8ece9c71590875793"},
-  {"url":"resources/dia_ro.txt","revision":"7cb0b2cf6e83535d70a747520a9f7226"},
-  {"url":"resources/dia_ru.txt","revision":"ac23432d915e6615f572e755fc5afc18"},
-  {"url":"resources/dia_si.txt","revision":"6ff7290efb88947d350d86520afcd7dd"},
-  {"url":"resources/dia_sk.txt","revision":"77622003febb86ee36caf7d34e1f58da"},
-  {"url":"resources/dia_sl.txt","revision":"5238d5b452c45b3f3b8d905831976cde"},
-  {"url":"resources/dia_sr.txt","revision":"c6dff4011277f3ed2cbf402f410b9753"},
-  {"url":"resources/dia_sv.txt","revision":"3c0f44110d515c5cb60181b519157218"},
-  {"url":"resources/dia_sw.txt","revision":"0ebfe1e46a498d1864f7e4bb367c44dd"},
-  {"url":"resources/dia_ta.txt","revision":"14432fc6b1180829212356108ba91545"},
-  {"url":"resources/dia_te.txt","revision":"ee8c503b8611abd8ead47200826171e0"},
-  {"url":"resources/dia_th.txt","revision":"6f7fc869d441321228bd34a74286936a"},
-  {"url":"resources/dia_tr.txt","revision":"c09062519b1399aaa7c1f2ba24b699b4"},
-  {"url":"resources/dia_uk.txt","revision":"2bb666feaab173702ace016e4538a768"},
-  {"url":"resources/dia_vi.txt","revision":"f38941c83dfa10c0d078159a0497fbc6"},
-  {"url":"resources/dia_zh.txt","revision":"7c1eaa180f9cf5c309778e19040dad24"},
-  {"url":"resources/dia_zh-tw.txt","revision":"03a44e4c3771f60276d1a8f100c0189b"}
+  {"url":"resources/dia_am.txt","revision":"a9cb4c752fc5f759e41db53947d26aca"},
+  {"url":"resources/dia_ar.txt","revision":"bf207f0bf445f7ebd31c60ee567ce6fb"},
+  {"url":"resources/dia_bg.txt","revision":"e9794ce2f706f634c85dde9fb945b717"},
+  {"url":"resources/dia_bn.txt","revision":"da0dfb2ac95ee2778b2fe6093f836c37"},
+  {"url":"resources/dia_bs.txt","revision":"b07c0c6ba877b427dc3079152da5b0da"},
+  {"url":"resources/dia_ca.txt","revision":"a89f1b61ecd773c472703123120e69ac"},
+  {"url":"resources/dia_cs.txt","revision":"dc78f467a1e40fb3c3a5defa02892b80"},
+  {"url":"resources/dia_da.txt","revision":"7ae08e47bb1fd6736b548a16179ccf41"},
+  {"url":"resources/dia_de.txt","revision":"49ac736e473be4b6d1b653cf6e1362b1"},
+  {"url":"resources/dia_el.txt","revision":"b27bcb6d4b7f5ecd3c039c6c676dbc6a"},
+  {"url":"resources/dia_eo.txt","revision":"9917d3d5e4270ee0b09bfc80dc0ffe90"},
+  {"url":"resources/dia_es.txt","revision":"638f07668d6efa510c59d99c02076aea"},
+  {"url":"resources/dia_et.txt","revision":"3390cf9b9d3cb3decbc992013f8518bb"},
+  {"url":"resources/dia_eu.txt","revision":"f651f913074185f1906c49fbe58aa8fb"},
+  {"url":"resources/dia_fa.txt","revision":"71bea63da3fdf620ca8ac167195590e2"},
+  {"url":"resources/dia_fi.txt","revision":"caf8a50f7c90a950c72d4f63cdb284e4"},
+  {"url":"resources/dia_fil.txt","revision":"7224dab6ef7c3502e547ba79a9799706"},
+  {"url":"resources/dia_fr.txt","revision":"e0ac6f04ff9bac706a02da569bf34b94"},
+  {"url":"resources/dia_gl.txt","revision":"21ffd103984179aeb864c6b3bdf6088e"},
+  {"url":"resources/dia_gu.txt","revision":"284809fc9cd13f1079bb2e1481c0a0d1"},
+  {"url":"resources/dia_he.txt","revision":"94306ce2df5dd71de8e9713570a04b5d"},
+  {"url":"resources/dia_hi.txt","revision":"e696741f9f3b8127efa960c98ba05ce8"},
+  {"url":"resources/dia_hr.txt","revision":"e6ba0b14ee37024c0e92ccc566604218"},
+  {"url":"resources/dia_hu.txt","revision":"3dc384ba5d665d0f4c08c45621dcc876"},
+  {"url":"resources/dia_i18n.txt","revision":"900f08f5924aac2f362e9bd8ba826419"},
+  {"url":"resources/dia_id.txt","revision":"69de571ae37ac1df083e4f6547ae9807"},
+  {"url":"resources/dia_it.txt","revision":"1c709ae5b56976c653e98fd6102c71e7"},
+  {"url":"resources/dia_ja.txt","revision":"07898bb0c47c339383aed2dc5d5b8704"},
+  {"url":"resources/dia_kl.txt","revision":"e3d61bf44008aa7e4a3a0ea64f1fd286"},
+  {"url":"resources/dia_kn.txt","revision":"25f0bc5915cc830595bdadc79328bf45"},
+  {"url":"resources/dia_ko.txt","revision":"7eed1312b86f2ff44404c21098d2be4f"},
+  {"url":"resources/dia_lt.txt","revision":"1df5a8eecfc5d6148599f5903d79b694"},
+  {"url":"resources/dia_lv.txt","revision":"b2747125c021adb12d2c68024e2c4850"},
+  {"url":"resources/dia_ml.txt","revision":"9708c7a017b331befaed7d34e2729efe"},
+  {"url":"resources/dia_mr.txt","revision":"9875d3feebc9670ce4f1dae65e3b1c1d"},
+  {"url":"resources/dia_ms.txt","revision":"172230f5a5e86d2602343b0b3ca7a151"},
+  {"url":"resources/dia_my.txt","revision":"bead84a42ac339de09aca954d8e80bde"},
+  {"url":"resources/dia_nl.txt","revision":"07de754b3643e13beedcdd5c9112c829"},
+  {"url":"resources/dia_no.txt","revision":"0f08a0a3942d92dad30f45b32b825620"},
+  {"url":"resources/dia_pl.txt","revision":"612e1fcf514470d7f67c6d857fd209fc"},
+  {"url":"resources/dia_pt.txt","revision":"de1ba63acbff7697490dc6cda3b9e011"},
+  {"url":"resources/dia_pt-br.txt","revision":"478bc3dbbd35d71281ae35dc7e183507"},
+  {"url":"resources/dia_ro.txt","revision":"c3e94069ddc8a49c0580e470672adf6a"},
+  {"url":"resources/dia_ru.txt","revision":"0126f4a4776d67867bf2be922b6f6c52"},
+  {"url":"resources/dia_si.txt","revision":"bda6b6c918434a897fb0c8ef6950ea16"},
+  {"url":"resources/dia_sk.txt","revision":"1b3dff2f6149d55b89753895e07eeef6"},
+  {"url":"resources/dia_sl.txt","revision":"445a2ae24ef2d08ad3c3810f531f7e7c"},
+  {"url":"resources/dia_sr.txt","revision":"ccf62a538b35446e3c9e4dbb601bdf66"},
+  {"url":"resources/dia_sv.txt","revision":"81f0ec406c80b38649861bb28e911b10"},
+  {"url":"resources/dia_sw.txt","revision":"6a89ed29eba14d6acb59eaa6688c4627"},
+  {"url":"resources/dia_ta.txt","revision":"4bb6b6bcfc9bf8ce5cbf5e24428753b7"},
+  {"url":"resources/dia_te.txt","revision":"8a6ad221c5b44988f6cc65c4e99d3c57"},
+  {"url":"resources/dia_th.txt","revision":"dfdb5de93fbd2b6cd0dc01cddc53f5c5"},
+  {"url":"resources/dia_tr.txt","revision":"1fc8f8bc5b37477f3133f850c87299a5"},
+  {"url":"resources/dia_uk.txt","revision":"2369ce19d2f875db3254ad05d33ef4d7"},
+  {"url":"resources/dia_vi.txt","revision":"6162ddb30882c86c162ed75f334aa068"},
+  {"url":"resources/dia_zh.txt","revision":"686e23937e11fee3dcb43984350c56f2"},
+  {"url":"resources/dia_zh-tw.txt","revision":"39acf0c165d113ee403df7bddd2361eb"}
 ];
 
 // Precached URL served when a lazy entry is requested offline before it was
@@ -192,6 +200,7 @@ var DEV_MANIFEST = [
   "js/diagramly/Embed.js",
   "js/diagramly/EmbedFile.js",
   "js/diagramly/Extensions.js",
+  "js/diagramly/ForceExplorer.js",
   "js/diagramly/GitHubClient.js",
   "js/diagramly/GitHubFile.js",
   "js/diagramly/GitHubLibrary.js",
@@ -215,6 +224,8 @@ var DEV_MANIFEST = [
   "js/diagramly/RemoteLibrary.js",
   "js/diagramly/Settings.js",
   "js/diagramly/Simple.js",
+  "js/diagramly/SpringHandle.js",
+  "js/diagramly/SpringMove.js",
   "js/diagramly/StorageFile.js",
   "js/diagramly/StorageLibrary.js",
   "js/diagramly/Trees.js",
@@ -343,6 +354,129 @@ var SCOPE_BASE = self.registration.scope;
 var FETCH_BASE = new URL('./', self.location.href).href;
 var PREFIXED = FETCH_BASE !== SCOPE_BASE;
 
+// The release this worker was built for.
+var VERSION = "32.6.9";
+
+// Installs that keep failing on a client (a file its network blocks or
+// rewrites, a full storage quota) kept it on an old release for months
+// (30.0.3, May 2026): the old worker serves its old files until an install
+// of a new one completes. Every install is recorded in STATE_CACHE, which
+// the next worker versions read, and a complete install deletes the record.
+// Once installs have failed for FALLBACK_DAYS and FALLBACK_ATTEMPTS, an
+// install keeps the entries it could store, activates, and the fetch
+// handler takes the others from the network; it still stores no bytes that
+// do not match their revision. The newest previous revision of those others
+// stays in the cache until an install stores the current one (see
+// activate), and answers when the network fails or blocks the file, so the
+// client still starts offline: a file of the previous release next to the
+// current ones beats no file. A pinned release (the stable channel) never
+// counts: only a changed worker script starts an install.
+var FALLBACK_DAYS = 7;
+var FALLBACK_ATTEMPTS = 3;
+var STATE_CACHE = ['drawio', 'sw-state', self.registration.scope].join('-');
+var FAILURES_KEY = new URL('__install-failures', SCOPE_BASE).href;
+
+// The record of the installs that did not complete since the last one that
+// did ({first, attempts, reported}), or null.
+function readFailures()
+{
+  return caches.open(STATE_CACHE).then(function(cache)
+  {
+    return cache.match(FAILURES_KEY);
+  }).then(function(res)
+  {
+    return (res != null) ? res.json() : null;
+  }).then(function(record)
+  {
+    return (record != null && typeof record.first === 'number' &&
+      typeof record.attempts === 'number') ? record : null;
+  }, function()
+  {
+    return null;
+  });
+}
+
+// Stores the given record, or deletes it for null. Never rejects.
+function writeFailures(record)
+{
+  return caches.open(STATE_CACHE).then(function(cache)
+  {
+    return (record != null) ? cache.put(FAILURES_KEY,
+      new Response(JSON.stringify(record))) : cache.delete(FAILURES_KEY);
+  }).then(null, function()
+  {
+    return null;
+  });
+}
+
+// What the network answers for the given precached URL without the
+// integrity check (which hides the status of a failed fetch): the status,
+// the type and whether the bytes are the ones of the revision (an error or
+// block page, or a body a proxy rewrites, are not).
+function diagnose(url)
+{
+  var key = urlsToCacheKeys.get(new URL(url, SCOPE_BASE).href);
+
+  return fetch(new Request(cacheKeysToNetworkUrls.get(key),
+    {cache: 'no-store', credentials: 'same-origin'})).then(function(res)
+  {
+    var type = (res.headers.get('Content-Type') || '').split(';')[0];
+    var info = 'status=' + res.status + ' type=' +
+      type.replace(/[^\w/.+-]/g, '').substring(0, 60);
+    var integrity = cacheKeysToIntegrity.get(key);
+
+    return (integrity == null) ? info :
+      res.arrayBuffer().then(integrityOf).then(function(value)
+    {
+      return info + ' bytes=' + ((value == integrity) ? 'match' : 'differ');
+    });
+  }).then(null, function(e)
+  {
+    return 'fetch=' + ((e != null && e.name) ? e.name : 'error');
+  });
+}
+
+// Reports an install that falls back to the network for the given failed
+// entries ([{url, error}]) once per record, to the log of the page's host.
+// Only file paths, error names and messages, counts and what the network
+// answers for the first failed file (diagnose) are sent.
+function reportFallback(record, failed, total)
+{
+  if (record.reported)
+  {
+    return Promise.resolve();
+  }
+
+  record.reported = true;
+
+  return writeFailures(record).then(function()
+  {
+    return diagnose(failed[0].url);
+  }).then(function(detail)
+  {
+    var msg = 'sw-install-fallback: ' + failed.length + ' of ' + total +
+      ' entries failed, ' + record.attempts + ' attempts in ' +
+      Math.floor((Date.now() - record.first) / 86400000) + ' days: ' +
+      failed.slice(0, 3).map(function(f)
+      {
+        var e = f.error;
+
+        return f.url + ' ' + String((e != null) ? ((e.name || 'Error') +
+          ': ' + (e.message || '')) : 'unknown').substring(0, 100);
+      }).join(', ') + ' (' + failed[0].url + ': ' + detail + ')';
+
+    var url = new URL('log', SCOPE_BASE);
+    url.searchParams.set('severity', 'WARNING');
+    url.searchParams.set('v', VERSION);
+    url.searchParams.set('msg', msg);
+
+    return fetch(url.href, {cache: 'no-store', credentials: 'omit'});
+  }).then(null, function()
+  {
+    return null;
+  });
+}
+
 function swCacheKey(entry)
 {
   var u = new URL(entry.url, SCOPE_BASE);
@@ -376,6 +510,24 @@ LAZY_MANIFEST.forEach(function(e)
   var key = swCacheKey(e);
   lazyUrlsToCacheKeys.set(new URL(e.url, SCOPE_BASE).href, key);
   cacheKeysToNetworkUrls.set(key, new URL(e.url, FETCH_BASE).href);
+});
+
+// Maps each cache key to the build-time hash of its file (all entries but
+// documents): only these bytes are ever stored under the key, so the cache
+// holds one release. Not part of the key (see swCacheKey). Development
+// hosts serve a working tree, not the release the hashes were built from:
+// every file edited since the build would fail their installs, and no edge
+// serves them another release, so they store what they get as before.
+var cacheKeysToIntegrity = new Map();
+var DEV_HOST = /^(test\.draw\.io|localhost|127\.0\.0\.1)$/.test(
+  self.location.hostname);
+
+MANIFEST.concat(LAZY_MANIFEST).forEach(function(e)
+{
+  if (e.integrity && !DEV_HOST)
+  {
+    cacheKeysToIntegrity.set(swCacheKey(e), e.integrity);
+  }
 });
 
 // Dev entries are keyed by their plain URL (network-first needs no
@@ -455,6 +607,31 @@ function baseUrl(url)
   return u.href;
 }
 
+// The index of the newest of the given cached copies of an entry: the one
+// with the latest Date header (when it was fetched), else the later one in
+// the list. The Cache API lists entries in the order they were stored, but
+// WebKit sorts them by a clock that starts again with the computer, so a
+// copy stored after a restart can come first there.
+function newestIndex(responses)
+{
+  var result = -1;
+  var time = NaN;
+
+  for (var i = 0; i < responses.length; i++)
+  {
+    var t = (responses[i] != null) ?
+      Date.parse(responses[i].headers.get('Date')) : NaN;
+
+    if (!(t < time))
+    {
+      result = i;
+      time = t;
+    }
+  }
+
+  return result;
+}
+
 // A redirected response cannot be served for a navigation; copy it clean.
 function copyRedirected(response)
 {
@@ -465,6 +642,87 @@ function copyRedirected(response)
       status: response.status,
       statusText: response.statusText
     });
+  });
+}
+
+// Fetches the given cache key from the network. With an integrity value the
+// response must have the bytes of this revision: right after a deploy the
+// edge can still serve the previous release's copy of the URL for minutes,
+// and storing it under this revision would mix two releases until the next
+// one. A mismatch is retried once with the revision in the URL, which the
+// edge caches separately, and then rejects (fails the atomic install).
+function fetchEntry(key)
+{
+  var url = cacheKeysToNetworkUrls.get(key);
+  var integrity = cacheKeysToIntegrity.get(key);
+
+  function get(u)
+  {
+    var init = {cache: 'reload', credentials: 'same-origin'};
+
+    if (integrity != null)
+    {
+      init.integrity = integrity;
+    }
+
+    return fetch(new Request(u, init));
+  }
+
+  return get(url).then(null, function(err)
+  {
+    if (integrity == null)
+    {
+      throw err;
+    }
+
+    var u = new URL(url);
+    u.searchParams.set('__WB_REVISION__',
+      new URL(key).searchParams.get('__WB_REVISION__'));
+
+    return get(u.href);
+  });
+}
+
+// The integrity value ("sha256-" and the base64 SHA-256) of the given bytes.
+function integrityOf(buffer)
+{
+  return crypto.subtle.digest('SHA-256', buffer).then(function(digest)
+  {
+    var bytes = new Uint8Array(digest);
+    var bin = '';
+
+    for (var i = 0; i < bytes.length; i++)
+    {
+      bin += String.fromCharCode(bytes[i]);
+    }
+
+    return 'sha256-' + btoa(bin);
+  });
+}
+
+// True if the cached response for the given key has the bytes of its
+// revision. Workers built before integrity values stored whatever the edge
+// returned, so an entry under an unchanged revision can hold another
+// release's file; the install fetches those again.
+function isIntact(cache, key)
+{
+  var integrity = cacheKeysToIntegrity.get(key);
+
+  if (integrity == null)
+  {
+    return Promise.resolve(true);
+  }
+
+  return cache.match(key).then(function(cached)
+  {
+    return (cached == null) ? false : cached.arrayBuffer().then(integrityOf)
+      .then(function(value)
+    {
+      return value == integrity;
+    });
+  }).then(null, function()
+  {
+    return false;
   });
 }
 
@@ -498,10 +756,7 @@ function putLazy(cache, key, response)
 // cache-poisoning guard as the precache install.
 function fetchLazy(cache, key)
 {
-  var req = new Request(cacheKeysToNetworkUrls.get(key),
-    {cache: 'reload', credentials: 'same-origin'});
-
-  return fetch(req).then(function(response)
+  return fetchEntry(key).then(function(response)
   {
     if (!response || response.status >= 400)
     {
@@ -526,7 +781,21 @@ function fetchLazy(cache, key)
 
 self.addEventListener('install', function(event)
 {
-  event.waitUntil(caches.open(CACHE_NAME).then(function(cache)
+  var now = Date.now();
+  var record = null;
+
+  // Counted before the install runs, so an install that is stopped, or that
+  // fails because the storage is full, counts as failed too
+  event.waitUntil(readFailures().then(function(previous)
+  {
+    record = (previous != null) ? previous : {first: now, attempts: 0};
+    record.attempts++;
+
+    return writeFailures(record);
+  }).then(function()
+  {
+    return caches.open(CACHE_NAME);
+  }).then(function(cache)
   {
     return cache.keys().then(function(existing)
     {
@@ -535,6 +804,13 @@ self.addEventListener('install', function(event)
       {
         return baseUrl(r.url);
       }));
+
+      // Same revision already cached (unchanged file) - keep it, no
+      // re-fetch, unless its bytes are not the ones of that revision.
+      function isCurrent(key)
+      {
+        return have.has(key) ? isIntact(cache, key) : Promise.resolve(false);
+      }
 
       // Lazy entries are not downloaded at install, but entries the client
       // already uses (cached under an older revision) are refreshed so an
@@ -545,30 +821,36 @@ self.addEventListener('install', function(event)
       {
         var key = swCacheKey(entry);
 
-        if (have.has(key) || !haveBases.has(baseUrl(key)))
+        if (!haveBases.has(baseUrl(key)))
         {
           return Promise.resolve();
         }
 
-        return fetchLazy(cache, key).then(null, function() { return null; });
+        return isCurrent(key).then(function(current)
+        {
+          return current ? null : fetchLazy(cache, key);
+        }).then(null, function() { return null; });
       });
+
+      // Every entry runs to the end, so the entries that are stored stay for
+      // the next attempt and a fallback has all it could get
+      var failed = [];
 
       return Promise.all(MANIFEST.map(function(entry)
       {
         var key = swCacheKey(entry);
 
-        // Same revision already cached (unchanged file) - keep it, no re-fetch.
-        if (have.has(key))
+        return isCurrent(key).then(function(current)
         {
-          return Promise.resolve();
-        }
-
-        var req = new Request(new URL(entry.url, FETCH_BASE).href,
-          {cache: 'reload', credentials: 'same-origin'});
-
-        return fetch(req).then(function(response)
+          return current ? null : fetchEntry(key);
+        }).then(function(response)
         {
-          if (!response || response.status >= 400)
+          if (response == null)
+          {
+            return null;
+          }
+
+          if (response.status >= 400)
           {
             throw new Error('bad-precaching-response: ' + entry.url);
           }
@@ -589,8 +871,29 @@ self.addEventListener('install', function(event)
             copyRedirected(response) : Promise.resolve(response);
 
           return prepared.then(function(res) { return cache.put(key, res); });
+        }).then(null, function(err)
+        {
+          failed.push({url: entry.url, error: err});
         });
-      }).concat(lazy));
+      }).concat(lazy)).then(function()
+      {
+        if (failed.length == 0)
+        {
+          return writeFailures(null);
+        }
+
+        // Fails the (atomic) install: the current worker keeps serving its
+        // release and the next start tries again
+        if (now - record.first < FALLBACK_DAYS * 86400000 ||
+          record.attempts < FALLBACK_ATTEMPTS)
+        {
+          throw failed[0].error;
+        }
+
+        // Activates with the entries stored so far. The record stays, so
+        // the next releases install the same way until one is complete.
+        return reportFallback(record, failed, MANIFEST.length);
+      });
     });
   }));
 });
@@ -608,28 +911,111 @@ self.addEventListener('activate', function(event)
     {
       var present = new Set(keys.map(function(r) { return r.url; }));
 
-      return Promise.all(keys.map(function(request)
+      // A stale revision survives until its replacement is cached - it
+      // is the offline fallback of a lazy entry while the install-time
+      // refresh has not succeeded, and of a precache entry that a
+      // fallback install could not store (complete installs store all).
+      // Failed installs leave the copies they stored, so with several
+      // releases in the meantime only the newest copy of each entry stays.
+      var stale = new Map();
+
+      keys.forEach(function(request)
       {
-        // Drop entries whose revision changed or that left the manifest.
         if (!valid.has(request.url))
         {
-          // A stale revision of a lazy entry survives until its
-          // replacement is cached - it is the offline fallback while the
-          // install-time refresh has not succeeded.
-          var current = lazyUrlsToCacheKeys.get(baseUrl(request.url));
+          var base = baseUrl(request.url);
+          var current = lazyUrlsToCacheKeys.get(base) ||
+            urlsToCacheKeys.get(base);
 
-          if (current == null || present.has(current))
+          if (current != null && !present.has(current))
           {
-            return cache.delete(request);
+            if (!stale.has(base))
+            {
+              stale.set(base, []);
+            }
+
+            stale.get(base).push(request);
           }
         }
+      });
 
-        return Promise.resolve(false);
-      }));
+      var kept = new Set();
+
+      return Promise.all(Array.from(stale.values()).map(function(requests)
+      {
+        return Promise.all(requests.map(function(request)
+        {
+          return (requests.length > 1) ? cache.match(request).then(null,
+            function() { return null; }) : null;
+        })).then(function(responses)
+        {
+          kept.add(requests[newestIndex(responses)].url);
+        });
+      })).then(function()
+      {
+        // Drop entries whose revision changed or that left the manifest.
+        return Promise.all(keys.map(function(request)
+        {
+          return (valid.has(request.url) || kept.has(request.url)) ?
+            Promise.resolve(false) : cache.delete(request);
+        }));
+      });
     });
   }));
 });
 
+// Fetches a precached URL that is missing from the cache.
+function fetchPrecache(event, key)
+{
+  // A prefixed worker must refill from its own fetch base, never from the
+  // unprefixed (other-channel) URL.
+  if (!PREFIXED)
+  {
+    return fetch(event.request);
+  }
+
+  return fetch(cacheKeysToNetworkUrls.get(key)).then(function(res)
+  {
+    if (res != null && res.ok)
+    {
+      return res;
+    }
+
+    // The pinned route no longer serves this file: a skewed beta copy
+    // beats a broken page, and a deterministic 404 also drops the
+    // registration so the next start re-registers a coherent channel.
+    if (res != null && res.status == 404)
+    {
+      self.registration.unregister();
+    }
+
+    return fetch(event.request);
+  }, function()
+  {
+    return fetch(event.request);
+  });
+}
+
+// False for error responses and for HTML bodies of non-document entries
+// (an error or block page with a 200 status), as in the install.
+function isUsable(response, key)
+{
+  if (response == null || response.status >= 400)
+  {
+    return false;
+  }
+
+  var type = response.headers.get('Content-Type') || '';
+  var pathname = new URL(baseUrl(key)).pathname;
+
+  return type.indexOf('text/html') < 0 || pathname.endsWith('.html') ||
+    pathname.endsWith('.htm');
+}
+
+// Cache-first on the current revision, then the network. A fallback install
+// activates without the entries it could not store and keeps their previous
+// revision (see activate), which answers when the network fails or blocks
+// the file, so the client still starts offline.
 function respondPrecache(event, key)
 {
   return caches.open(CACHE_NAME).then(function(cache)
@@ -641,32 +1027,39 @@ function respondPrecache(event, key)
         return cached;
       }
 
-      // Cache miss on a precached URL: a prefixed worker must refill from its
-      // own fetch base, never from the unprefixed (other-channel) URL.
-      if (!PREFIXED)
+      // The newest previous revision, else the network's answer or error
+      function previous(response, err)
       {
-        return fetch(event.request);
+        return cache.matchAll(new Request(baseUrl(key)),
+          {ignoreSearch: true}).then(function(responses)
+        {
+          return (responses.length > 0) ?
+            responses[newestIndex(responses)] : null;
+        }).then(null, function()
+        {
+          return null;
+        }).then(function(stale)
+        {
+          if (stale != null)
+          {
+            return stale;
+          }
+
+          if (response == null)
+          {
+            throw err;
+          }
+
+          return response;
+        });
       }
 
-      return fetch(cacheKeysToNetworkUrls.get(key)).then(function(res)
+      return fetchPrecache(event, key).then(function(response)
       {
-        if (res != null && res.ok)
-        {
-          return res;
-        }
-
-        // The pinned route no longer serves this file: a skewed beta copy
-        // beats a broken page, and a deterministic 404 also drops the
-        // registration so the next start re-registers a coherent channel.
-        if (res != null && res.status == 404)
-        {
-          self.registration.unregister();
-        }
-
-        return fetch(event.request);
-      }, function()
+        return isUsable(response, key) ? response : previous(response, null);
+      }, function(err)
       {
-        return fetch(event.request);
+        return previous(null, err);
       });
     });
   });
