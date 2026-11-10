@@ -27,3 +27,19 @@ native Print is retained. No server conversion service is added.
 On upstream updates, review native file menu, export protocol, keyboard
 bindings, EmbedFile and local download semantics. Main-repository behavior tests
 cover the contribution and the React publication adapter.
+
+Assistant edits use the official JSON embed `patch` action. The same local
+extension recognizes one closed `_flashyun` envelope: a no-op capability probe,
+then an exact native XML base check immediately before applying the reviewed
+cell patch. Ordinary upstream patches keep their original semantics. Guarded
+patches call `DrawioFile.patch` with `undoable` and `sendChanges` enabled, adding
+the edit to native history without replacing the file or unrelated pages.
+The host validates all stable page/cell IDs and optional field preconditions
+before dispatch. No arbitrary patch, script, remote plugin or engine method is
+accepted from the assistant. Geometry and user-object values are serialized
+through DOM APIs only for the fields required by the official JSON diff codec.
+
+Layout uses a closed set of synchronous native mxGraph layout classes, within
+one native model transaction, after the same base guard. It requires the exact
+current page ID; other page layouts are rejected. This avoids an asynchronous
+layout loader applying a command after its checked base changed.

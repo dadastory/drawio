@@ -8,6 +8,62 @@
     Draw.loadPlugin(function(ui)
     {
         var writable = urlParams['noSaveBtn'] !== '1';
+
+        // The official embed patch action has no expected-base condition and
+        // applies remote changes without an undo entry. Keep that transport and
+        // native implementation, adding one closed host-only guarded variant.
+        // The entire batch was compiled from this exact native XML snapshot;
+        // comparing it synchronously here closes the export-to-dispatch race.
+        var nativePatch = DrawioFile.prototype.patch;
+        DrawioFile.prototype.patch = function(patches, resolver, undoable, sendChanges, mergeInserts)
+        {
+            var guard = patches != null && patches.length === 1 &&
+                patches[0] != null ? patches[0]._flashyun : null;
+            if (guard == null) return nativePatch.apply(this, arguments);
+            if (guard.version !== 1) { guard.rejected = 'document_editor_unavailable'; return; }
+            if (guard.probe === true) { guard.supported = true; return; }
+            var graph = this.ui.editor.graph;
+            if (!writable || !graph.isEnabled()) { guard.rejected = 'operation_not_allowed'; return; }
+            graph.stopEditing();
+            if (typeof guard.expectedXml !== 'string' || this.ui.getFileData(true) !== guard.expectedXml)
+            {
+                guard.rejected = 'revision_conflict';
+                return;
+            }
+            var patch = patches[0];
+            // No file/page insertion or removal and no raw engine dispatch.
+            if (Object.keys(patch).some(function(key) { return key !== 'u' && key !== '_flashyun'; }) ||
+                patch.u == null || typeof patch.u !== 'object')
+            {
+                guard.rejected = 'invalid_input';
+                return;
+            }
+            if (guard.layout != null)
+            {
+                var layouts = {
+                    verticalFlow: function() { return new mxHierarchicalLayout(graph, mxConstants.DIRECTION_NORTH); },
+                    horizontalFlow: function() { return new mxHierarchicalLayout(graph, mxConstants.DIRECTION_WEST); },
+                    verticalTree: function() { return new mxCompactTreeLayout(graph, false); },
+                    horizontalTree: function() { return new mxCompactTreeLayout(graph, true); },
+                    radialTree: function() { return new mxRadialTreeLayout(graph); },
+                    organic: function() { return new mxFastOrganicLayout(graph); }
+                };
+                if (!Object.prototype.hasOwnProperty.call(layouts, guard.layout) ||
+                    this.ui.currentPage == null || this.ui.currentPage.getId() !== guard.pageId)
+                {
+                    guard.rejected = 'document_conflict';
+                    return;
+                }
+                graph.model.beginUpdate();
+                try { layouts[guard.layout]().execute(graph.getDefaultParent()); }
+                finally { graph.model.endUpdate(); }
+            }
+            else
+            {
+                nativePatch.call(this, [{u: patch.u}], null, true, true, mergeInserts);
+            }
+            guard.applied = true;
+        };
         var chinese = (mxClient.language || '').indexOf('zh') === 0;
         mxResources.parse('flashyunDownload=' + (chinese ? '下载' : 'Download') + '\n' +
             'flashyunExportAs=' + (chinese ? '导出为' : 'Export As'));
