@@ -1881,6 +1881,47 @@ Graph.defaultMultipleCount = 2;
 Graph.maxMultipleCount = 10;
 
 /**
+ * Default size of the rings of flowAnimationType=ring. The default is at
+ * least 4 times the stroke width.
+ */
+Graph.defaultFlowRingSize = 12;
+
+/**
+ * Default size of the dots of flowAnimationType=dot. The default is at least
+ * 3 times the stroke width.
+ */
+Graph.defaultFlowDotSize = 8;
+
+/**
+ * Maximum size of the rings and dots of flowAnimationType=ring and dot.
+ */
+Graph.maxFlowRingSize = 1000;
+
+/**
+ * Maximum number of rings and dots along an edge (flowAnimationCount).
+ */
+Graph.maxFlowRingCount = 100;
+
+/**
+ * Default time in ms that the rings and dots of flowAnimationType=ring and
+ * dot take from the start to the end of an edge.
+ */
+Graph.defaultFlowRingDuration = 1500;
+
+/**
+ * Distance that the dashes of the rings and dots move in one loop for a
+ * pathLength of 100. It is longer than the path so that one ring leaves the
+ * edge before the next one enters it.
+ */
+Graph.flowRingPeriod = 101;
+
+/**
+ * Dash offset of the rings and dots that puts one of them in the middle of
+ * the edge for a pathLength of 100.
+ */
+Graph.flowRingOffset = 51;
+
+/**
  * Default horizontal offset between the copies of multiple=1.
  */
 Graph.defaultMultipleDx = 8;
@@ -2010,12 +2051,15 @@ Graph.colorStyles = [mxConstants.STYLE_FONTCOLOR,
 	mxConstants.STYLE_SWIMLANE_FILLCOLOR, mxConstants.STYLE_LABEL_BACKGROUNDCOLOR];
 
 /**
- * Styles that are used for text.
+ * Styles that are used for text. labelPadding is here so that new edges and
+ * their labels get the label padding of the default edge style (see
+ * pasteCellStyles), and so that Copy Style, Paste Style and the default
+ * styles take it.
  */
 Graph.textStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontStyle',
 	'textOpacity', 'labelBorderColor', 'labelBorderWidth', 'labelBackgroundColor',
-	'defaultLabelBackgroundColor', 'autosize', 'resizable', 'horizontal', 'textDirection',
-	'autosizeText'];
+	'defaultLabelBackgroundColor', 'labelPadding', 'autosize', 'resizable', 'horizontal',
+	'textDirection', 'autosizeText'];
 
 /**
  * Text styles that label cells of edges can inherit from the edge (see
@@ -2052,13 +2096,14 @@ Graph.createInheritedLabelStyle = function()
 Graph.sharedTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor'];
 
 /**
- * Styles that are used for pasting text styles.
+ * Styles that are used for pasting text styles. labelPadding is pasted with
+ * the label gap (defaultLabelBackgroundColor) of new edges.
  */
 Graph.pasteTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'fontStyle',
 	'textOpacity', 'align', 'verticalAlign', 'spacingLeft', 'spacingRight',
 	'spacingTop', 'spacingBottom', 'spacing', 'labelBorderColor', 'labelBorderWidth',
-	'labelBackgroundColor', 'defaultLabelBackgroundColor', 'horizontal', 'textDirection',
-	'labelPlacement'];
+	'labelBackgroundColor', 'defaultLabelBackgroundColor', 'labelPadding', 'horizontal',
+	'textDirection', 'labelPlacement'];
 
 /**
  * Styles that are used for edges.
@@ -2066,6 +2111,7 @@ Graph.pasteTextStyles = ['fontFamily', 'fontSource', 'fontSize', 'fontColor', 'f
 Graph.edgeStyles = ['edgeStyle', 'elbow', 'jumpStyle', 'jumpSize', 'startArrow',
 	'startFill', 'startSize', 'endArrow', 'endFill', 'endSize', 'flowAnimation',
 	'flowAnimationDirection', 'flowAnimationTimingFunction', 'flowAnimationDuration',
+	'flowAnimationType', 'flowAnimationSize', 'flowAnimationCount', 'flowAnimationLoop',
 	'sourcePerimeterSpacing', 'targetPerimeterSpacing', 'fixedPointSpacing', 'curved',
 	'curveGeometry', 'trimCurve', 'linecap', 'linejoin', 'libavoidRouting', 'libavoidSpacing',
 	'followTerminals', 'labelPlacement'];
@@ -2713,7 +2759,7 @@ Graph.getSvgViewIds = function(pages)
 		// Trims with a scan, as -+$ takes quadratic time on a long run of
 		// dashes that is not at the end of the name
 		add(result[i], mxUtils.trim((pages[i].name || '').replace(
-			/(?:[^\w¡-퟿-�-]|\s)+/g, '-'), '-'));
+			/(?:[^\w\u00a1-\ud7ff\ue000-\ufffd-]|\s)+/g, '-'), '-'));
 	}
 
 	for (var i = 0; i < pages.length; i++)
@@ -4673,6 +4719,18 @@ Graph.optimizeNode = function(node)
  };
 
 /**
+ * Returns the scheme of the given URL in lower case, or null if it has none.
+ * Ignores what the URL parser removes before parsing (tab, LF and CR anywhere,
+ * leading C0 controls and spaces), which would otherwise hide the scheme.
+ */
+Graph.getUrlScheme = function(url)
+{
+	var match = /^[\x00-\x20]*([a-z][a-z0-9+.\-]*):/i.exec(url.replace(/[\t\n\r]/g, ''));
+
+	return (match != null) ? match[1].toLowerCase() : null;
+};
+
+/**
  * Sanitizes the given DOM node in-place.
  */
 Graph.sanitizeNode = function(value)
@@ -4873,7 +4931,7 @@ Graph.isStyleAllowed = function(css)
                 name += esc[0];
                 i = esc[1];
             }
-            else if (/[a-zA-Z0-9_\-\u0080-￿]/.test(c))
+            else if (/[a-zA-Z0-9_\-\u0080-\uffff]/.test(c))
             {
                 name += c;
                 i++;
@@ -4922,7 +4980,7 @@ Graph.isStyleAllowed = function(css)
 
                 urlArg = false;
             }
-            else if (c == '@' || /[a-zA-Z0-9_\-\u0080-￿\\]/.test(c))
+            else if (c == '@' || /[a-zA-Z0-9_\-\u0080-\uffff\\]/.test(c))
             {
                 // Identifiers and at-keywords, which may be escaped, eg. \75rl(
                 var token = readName(css, (c == '@') ? i + 1 : i);
@@ -5974,7 +6032,10 @@ Graph.maxCssRuleMatchCost = 1e6;
  * and backreferences, which can backtrack for exponential time, are not
  * allowed. The remaining cost grows with the length of the selector to the
  * power of the number of quantifiers, times the number of alternatives of
- * each group, which is limited for all selectors by maxCssRuleMatchCost.
+ * each group, plus the length of the selector times the length of the
+ * expression, as each position of the selector may be compared with all of
+ * the expression (eg. a long expression without quantifiers). The cost of
+ * all selectors is limited by maxCssRuleMatchCost.
  */
 Graph.createCssRuleMatcher = function(exp)
 {
@@ -6062,7 +6123,8 @@ Graph.createCssRuleMatcher = function(exp)
 	return function(selector)
 	{
 		selector = String(selector);
-		budget -= factor * Math.pow(selector.length + 1, quantifiers + 1);
+		budget -= factor * Math.pow(selector.length + 1, quantifiers + 1) +
+			selector.length * exp.length;
 
 		return budget >= 0 && regex.test(selector);
 	};
@@ -6512,7 +6574,12 @@ Graph.rewritePageLinks = function(doc, removeNamespace)
 				newAttrib = 'href';
 			}
 
-			link.setAttribute(newAttrib, href);
+			// Browsers use href if a link has both, and only the href
+			// of a link disables it (see disableSvgLinks)
+			if (newAttrib == attrib || link.getAttribute(newAttrib) == null)
+			{
+				link.setAttribute(newAttrib, href);
+			}
 		}
 	};
 
@@ -8664,6 +8731,16 @@ Graph.prototype.defaultEdgeLength = 80;
 Graph.prototype.multiSelectionHandlesEnabled = false;
 
 /**
+ * Returns true if multiple selected cells get one box with resize and
+ * rotation handles (see multiSelectionHandlesEnabled). Overrides can turn
+ * the box on in a theme.
+ */
+Graph.prototype.isMultiSelectionHandlesEnabled = function()
+{
+	return this.multiSelectionHandlesEnabled;
+};
+
+/**
  * Enables activation of special handles on unselected cells.
  */
 Graph.prototype.immediateHandling = true;
@@ -9696,6 +9773,7 @@ Graph.prototype.destroy = function()
 			mxUtils.getValue(state.style, 'lineShape', null) != '1' &&
 			shape != 'mxgraph.basic.arc' &&
 			shape != mxConstants.SHAPE_LINE &&
+			!this.isTie(state.cell) &&
 			(this.model.isVertex(state.cell) ||
 			shape == 'arrow' || shape == 'pipe' || shape == 'wire' ||
 			shape == 'filledEdge' || shape == 'flexArrow' ||
@@ -10103,6 +10181,55 @@ Graph.prototype.destroy = function()
 		if (result[mxConstants.STYLE_EDGE] == null)
 		{
 			result[mxConstants.STYLE_EDGE] = 'none';
+		}
+
+		return result;
+	};
+
+	/**
+	 * Returns the keys that the newEdgeStyle of the source of the given edge
+	 * removes (null values, see getNewEdgeStyleForEdge), which pasteCellStyles
+	 * does not add to new connections from the source. The optional cache
+	 * (an mxDictionary) keeps the keys of each source, as the style of a
+	 * source is resolved in full if it has no state yet (eg. after an import)
+	 * and a source can have many edges.
+	 */
+	Graph.prototype.getRemovedNewEdgeStyleKeys = function(edge, cache)
+	{
+		var source = this.model.getTerminal(edge, true);
+		var result = [];
+
+		if (source != null && cache != null && cache.get(source) != null)
+		{
+			result = cache.get(source);
+		}
+		else if (source != null)
+		{
+			if (cache != null)
+			{
+				cache.put(source, result);
+			}
+
+			try
+			{
+				var styles = Graph.decodeNewEdgeStyle(
+					this.getCurrentCellStyle(source)['newEdgeStyle']);
+
+				if (styles != null && typeof styles === 'object')
+				{
+					for (var key in styles)
+					{
+						if (styles[key] === null)
+						{
+							result.push(key);
+						}
+					}
+				}
+			}
+			catch (e)
+			{
+				// ignore
+			}
 		}
 
 		return result;
@@ -11320,6 +11447,9 @@ Graph.prototype.destroy = function()
 		pasteEdgeStyle = (pasteEdgeStyle != null) ? pasteEdgeStyle : this.pasteEdgeStyle;
 		pasteStylesToText = (pasteStylesToText != null) ? pasteStylesToText : this.pasteStylesToText;
 
+		// Keys that the newEdgeStyle of each source removes (see below)
+		var removedKeys = new mxDictionary();
+
 		this.model.beginUpdate();
 		try
 		{
@@ -11387,6 +11517,17 @@ Graph.prototype.destroy = function()
 							}
 						}
 					}
+
+					// Keeps the label padding of a label that sets it, like edges keep
+					// their own keys, as the default edge style has one for new edges
+					if (!force && typeof cellStyle === 'string' &&
+						/(^|;)\s*labelPadding\s*=/.test(cellStyle))
+					{
+						appliedStyles = appliedStyles.filter(function(key)
+						{
+							return key != mxConstants.STYLE_LABEL_PADDING;
+						});
+					}
 				}
 				else
 				{
@@ -11430,6 +11571,22 @@ Graph.prototype.destroy = function()
 										}
 									}
 								}
+							}
+						}
+
+						// Keeps out the keys that the newEdgeStyle of the source removes,
+						// so new connections look like the edge it was taken from (eg.
+						// without the label padding of the current edge style)
+						if (this.model.isEdge(cell))
+						{
+							var removed = this.getRemovedNewEdgeStyleKeys(cell, removedKeys);
+
+							if (removed.length > 0)
+							{
+								appliedStyles = appliedStyles.filter(function(key)
+								{
+									return mxUtils.indexOf(removed, key) < 0;
+								});
 							}
 						}
 					}
@@ -12507,6 +12664,92 @@ Graph.prototype.isFileBaseUrl = function()
 {
 	return this.baseUrl != null &&
 		this.baseUrl.substring(0, 5).toLowerCase() == 'file:';
+};
+
+/**
+ * Returns the given link as it can be written into an export if the base URL
+ * is a file: URL, or null if it cannot be written. Links with a scheme must be
+ * what getAbsoluteUrl leaves as it is. Anything else is dropped, not passed to
+ * getAbsoluteUrl, which neuters schemes such as ms-msdt: but adds the install
+ * path (see isFileBaseUrl). The result must replace the link, as sanitizeLink
+ * trims characters that the URL parser keeps, so that the link is what is
+ * checked.
+ * 
+ * link - String that represents the link.
+ * printed - Optional boolean that specifies if the output is a PDF or printout.
+ * The browser resolves links against the document in that case, so that only
+ * links that do not depend on its path can be written.
+ */
+Graph.prototype.getFileBaseLink = function(link, printed)
+{
+	link = Graph.sanitizeLink(link);
+
+	if (link != null)
+	{
+		var scheme = Graph.getUrlScheme(link);
+
+		if (scheme == null)
+		{
+			return (!printed || /^[\/\\#]/.test(link)) ? link : null;
+		}
+
+		return (scheme == 'mailto' || Graph.isPageLink(link) ||
+			(!/^(data|vbscript|livescript)$/.test(scheme) &&
+			this.absoluteUrlPattern.test(link))) ? link : null;
+	}
+
+	return null;
+};
+
+/**
+ * Replaces the links in the given node with the result of getFileBaseLink if
+ * the base URL is a file: URL. Applies to all elements that the sanitizer keeps
+ * and browsers follow. A link that is refused is removed as a whole, as the
+ * browser uses xlink:href if there is no href, and only the href of a link
+ * disables it (see disableSvgLinks). Must run on the final output, as embedded
+ * SVG images and math add links after the cells are rendered.
+ */
+Graph.prototype.updateFileBaseLinks = function(node, printed)
+{
+	if (this.isFileBaseUrl())
+	{
+		var links = node.querySelectorAll('a, area, math[*|href], math [*|href]');
+
+		// Any spelling, as SVG images are parsed as XML: the sanitizer checks
+		// names in lowercase and browsers follow XLINK:href like xlink:href
+		var isLink = function(attrib)
+		{
+			return /(^|:)href$/i.test(attrib.name);
+		};
+
+		for (var i = 0; i < links.length; i++)
+		{
+			var attribs = Array.prototype.filter.call(links[i].attributes, isLink);
+			var refused = false;
+
+			for (var j = 0; j < attribs.length; j++)
+			{
+				var link = this.getFileBaseLink(attribs[j].value, printed);
+
+				if (link == null)
+				{
+					refused = true;
+				}
+				else if (link != attribs[j].value)
+				{
+					attribs[j].value = link;
+				}
+			}
+
+			if (refused)
+			{
+				for (var j = 0; j < attribs.length; j++)
+				{
+					links[i].removeAttributeNode(attribs[j]);
+				}
+			}
+		}
+	}
 };
 
 /**
@@ -15991,6 +16234,111 @@ Graph.prototype.formatDate = function(date, mask, utc)
 };
 
 /**
+ * Visibility of layers in this view that differs from the model, as a map
+ * from layers to booleans, or null. It is not stored in the model, so it does
+ * not change the diagram or the undo history. Default is null.
+ */
+Graph.prototype.layerViewVisibility = null;
+
+/**
+ * Returns true if the given layer is visible in this view. This is the
+ * visibility in <layerViewVisibility> or else in the model.
+ */
+Graph.prototype.isLayerVisible = function(layer)
+{
+	var visible = (this.layerViewVisibility != null) ?
+		this.layerViewVisibility.get(layer) : null;
+
+	return (visible != null) ? visible : this.model.isVisible(layer);
+};
+
+/**
+ * Shows or hides the given layers in this view without changing the model.
+ */
+Graph.prototype.setLayersVisibleInView = function(layers, visible)
+{
+	if (this.layerViewVisibility == null)
+	{
+		this.layerViewVisibility = new mxDictionary();
+	}
+
+	for (var i = 0; i < layers.length; i++)
+	{
+		if (this.model.isVisible(layers[i]) == visible)
+		{
+			this.layerViewVisibility.remove(layers[i]);
+		}
+		else
+		{
+			this.layerViewVisibility.put(layers[i], visible);
+		}
+	}
+
+	this.refreshLayerViewVisibility();
+};
+
+/**
+ * Shows all layers as stored in the model if the visibility of layers in
+ * this view differs. If noRefresh is true then the view is not updated, eg.
+ * if the root is changed and the view is updated anyway.
+ */
+Graph.prototype.resetLayerViewVisibility = function(noRefresh)
+{
+	if (this.layerViewVisibility != null)
+	{
+		this.layerViewVisibility = null;
+
+		if (!noRefresh)
+		{
+			this.refreshLayerViewVisibility();
+		}
+	}
+};
+
+/**
+ * Updates the view after the visibility of layers in this view changed. The
+ * states of hidden layers are removed with their descendants, as for a
+ * change of the visibility in the model. Fires a refresh event, as there is
+ * no model change, so that the listeners that update for the view (eg. math
+ * typesetting, the outline and the text outline) update.
+ */
+Graph.prototype.refreshLayerViewVisibility = function()
+{
+	var root = this.model.getRoot();
+
+	for (var i = 0; i < this.model.getChildCount(root); i++)
+	{
+		var layer = this.model.getChildAt(root, i);
+
+		if (!this.isCellVisible(layer))
+		{
+			this.removeStateForCell(layer);
+		}
+	}
+
+	this.view.revalidate();
+	this.sizeDidChange();
+	this.fireEvent(new mxEventObject(mxEvent.REFRESH));
+	this.fireEvent(new mxEventObject('layerViewVisibilityChanged'));
+};
+
+/**
+ * Uses <isLayerVisible> for layers.
+ */
+Graph.prototype.isCellVisible = function(cell)
+{
+	if (this.layerViewVisibility != null &&
+		this.model.getParent(cell) == this.model.getRoot())
+	{
+		return this.isLayerVisible(cell);
+	}
+	else
+	{
+		return mxGraph.prototype.isCellVisible.apply(this, arguments);
+	}
+};
+
+/**
  * 
  */
 Graph.prototype.getLayerForCell = function(cell)
@@ -16122,10 +16470,13 @@ Graph.prototype.getPlaceholderParent = function(cell)
 Graph.prototype.placeholderCells = null;
 
 /**
- * Maximum number of keys and results that placeholderCells keeps. A
- * label with many placeholders under a deep cell would otherwise keep the
- * number of placeholders times the depth (eg. 100,000 placeholders 1,000
- * levels deep took 3 GB). Above the limit, the ancestors are tested again.
+ * Maximum number of keys and results that placeholderCells keeps for all
+ * tested ancestors. Labels with many placeholders under a deep cell would
+ * otherwise keep the number of placeholders times the depth (eg. 100,000
+ * placeholders 1,000 levels deep took 3 GB). Above the limit, only the
+ * result of the parent is kept, where the lookups of its other children
+ * stop as the view is validated from the top, which is at most one key and
+ * one result per lookup.
  */
 Graph.prototype.maxPlaceholderCells = 100000;
 
@@ -16163,10 +16514,10 @@ Graph.prototype.cachePlaceholderCells = function(fn)
  * Returns the given cell or the first of its ancestors (see
  * getPlaceholderParent) for which the given function returns true, or null.
  * While the view is validated, the result is kept for each ancestor that
- * was tested with the given key (see placeholderCells), so that the labels
- * and styles of many descendants of a deep cell do not test all ancestors
- * for each placeholder, which is the number of cells times the number of
- * placeholders times the depth.
+ * was tested with the given key (see placeholderCells and
+ * maxPlaceholderCells), so that the labels and styles of many descendants
+ * of a deep cell do not test all ancestors for each placeholder, which is
+ * the number of cells times the number of placeholders times the depth.
  */
 Graph.prototype.getPlaceholderCell = function(cell, key, found)
 {
@@ -16183,7 +16534,7 @@ Graph.prototype.getPlaceholderCell = function(cell, key, found)
 		{
 			this.placeholderCells.set(key, null);
 		}
-		else if (results === null && this.placeholderCellCount < this.maxPlaceholderCells)
+		else if (results === null)
 		{
 			results = new mxDictionary();
 			this.placeholderCells.set(key, results);
@@ -16220,10 +16571,13 @@ Graph.prototype.getPlaceholderCell = function(cell, key, found)
 		current = this.getPlaceholderParent(current);
 	}
 
-	if (results != null)
+	if (results != null && path.length > 0)
 	{
-		// Keeps the nearest ancestors up to maxPlaceholderCells
-		var count = Math.min(path.length, this.maxPlaceholderCells - this.placeholderCellCount);
+		// Keeps the nearest ancestors up to maxPlaceholderCells and then
+		// only the parent, so that shared placeholders of many cells under
+		// a deep cell do not test all ancestors again
+		var count = Math.max(1, Math.min(path.length,
+			this.maxPlaceholderCells - this.placeholderCellCount));
 
 		for (var i = 0; i < count; i++)
 		{
@@ -16778,17 +17132,19 @@ Graph.prototype.selectTableRange = function(startCell, endCell)
  */
 Graph.prototype.snapCellsToGrid = function(cells, gridSize)
 {
-	this.getModel().beginUpdate();
+	// Fires cellsArranged for the snapped vertices (see beginArrange)
+	var arrange = this.beginArrange();
+
 	try
 	{
 		for (var i = 0; i < cells.length; i++)
 		{
 			var cell = cells[i];
-			var geo = this.getCellGeometry(cell);
+			var prev = this.getCellGeometry(cell);
 
-			if (geo != null)
+			if (prev != null)
 			{
-				geo = geo.clone();
+				var geo = prev.clone();
 
 				if (this.getModel().isVertex(cell))
 				{
@@ -16806,13 +17162,17 @@ Graph.prototype.snapCellsToGrid = function(cells, gridSize)
 					}
 				}
 
-				this.getModel().setGeometry(cell, geo);
+				// Cells on the grid add no undo step that changes nothing
+				if (!geo.equals(prev))
+				{
+					this.getModel().setGeometry(cell, geo);
+				}
 			}
 		}
 	}
 	finally
 	{
-		this.getModel().endUpdate();
+		this.endArrange(arrange);
 	}
 };
 
@@ -17139,6 +17499,19 @@ Graph.prototype.insertEdgeBeforeCell = function(edge, cell)
 		var index = tmp.parent.getIndex(tmp);
 		this.model.add(tmp.parent, edge, index);
 	}
+};
+
+/**
+ * Hook for the styles of a shape that was dropped onto a hover arrow of the
+ * given source and of the new edge that connects it (see
+ * Sidebar.dropAndConnect), inside the model update of the drop. keepStyle is
+ * true if the shape keeps its own style (Shift). Returns the cells that got
+ * their styles here and must not get the current styles (cellsInserted).
+ * This implementation returns an empty array.
+ */
+Graph.prototype.styleDroppedConnection = function(source, target, edge, direction, keepStyle)
+{
+	return [];
 };
 
 /**
@@ -17931,13 +18304,150 @@ Graph.prototype.getStyleRules = function()
 };
 
 /**
- * Returns the value of the given property of the given cell for the rules:
- * the attribute of its data or the label of a cell without data. Returns null
- * if there is no such value.
+ * Returns the value of the given key in the given style string without
+ * resolving the style (named styles and the stylesheet are ignored), or
+ * null if the style has no such key.
  */
-Graph.prototype.getStyleRuleValue = function(cell, property)
+Graph.getOwnStyleValue = function(style, key)
 {
-	if (cell.value != null && typeof cell.value === 'object')
+	if (typeof style === 'string' && typeof key === 'string' && key.length > 0)
+	{
+		var tokens = style.split(';');
+
+		for (var i = tokens.length - 1; i >= 0; i--)
+		{
+			var j = tokens[i].indexOf('=');
+
+			if (j > 0 && tokens[i].substring(0, j) == key)
+			{
+				return tokens[i].substring(j + 1);
+			}
+		}
+	}
+
+	return null;
+};
+
+/**
+ * Returns the value of the given key in the style of the given cell (see
+ * getOwnStyleValue). The optional context keeps the keys of the style, as
+ * the rules of a cell can look up many keys in a long style.
+ */
+Graph.prototype.getStyleRuleOwnValue = function(cell, key, context)
+{
+	var style = this.model.getStyle(cell);
+
+	if (context == null)
+	{
+		return Graph.getOwnStyleValue(style, key);
+	}
+	else if (context.own == null)
+	{
+		var tokens = (typeof style === 'string') ? style.split(';') : [];
+		context.own = Object.create(null);
+
+		for (var i = 0; i < tokens.length; i++)
+		{
+			var j = tokens[i].indexOf('=');
+
+			if (j > 0)
+			{
+				context.own[tokens[i].substring(0, j)] = tokens[i].substring(j + 1);
+			}
+		}
+	}
+
+	return (context.own[key] != null) ? context.own[key] : null;
+};
+
+/**
+ * Returns the values that the writer of the rules of the given property (a
+ * property with an @, a key of the style of the cell, eg. @role of Style My
+ * Diagram) gave the given cell, as an object {key: value} without a
+ * prototype, or null. They are in the style of the cell under the key of the
+ * property with the suffix Base (eg. roleBase), as key:value pairs separated
+ * by commas (see encodeStyleRuleBase). A rule of such a property sets a key
+ * only while the cell still has that value, so a value set on the cell
+ * later, by any part of the app or by a release without these rules, wins
+ * over the rule (see applyStyleRules). With the optional context of the
+ * rules of a cell, only the keys that rules can set are decoded, as each
+ * pair that is not encoded throws an error.
+ */
+Graph.prototype.getStyleRuleBase = function(cell, property, context)
+{
+	var result = null;
+
+	if (typeof property === 'string' && property.charAt(0) == '@' && property.length > 1)
+	{
+		var value = this.getStyleRuleOwnValue(cell, property.substring(1) + 'Base', context);
+
+		if (value != null)
+		{
+			var tokens = value.split(',');
+			result = Object.create(null);
+
+			for (var i = 0; i < tokens.length; i++)
+			{
+				var j = tokens[i].indexOf(':');
+				var key = tokens[i].substring(0, j);
+
+				// Unlike decoding, unescape does not throw for other keys
+				if (j > 0 && (context == null || Object.prototype.hasOwnProperty.call(
+					Graph.dataStyleKeys, unescape(key))))
+				{
+					try
+					{
+						result[decodeURIComponent(key)] =
+							decodeURIComponent(tokens[i].substring(j + 1));
+					}
+					catch (e)
+					{
+						// Ignores pairs that are not encoded
+					}
+				}
+			}
+		}
+	}
+
+	return result;
+};
+
+/**
+ * Returns the given values {key: value} as the value of the base of the
+ * rules of a property with an @ (see getStyleRuleBase): encoded keys and
+ * values as key:value pairs separated by commas. Null values are left out.
+ */
+Graph.encodeStyleRuleBase = function(values)
+{
+	var tokens = [];
+
+	for (var key in values)
+	{
+		if (Object.prototype.hasOwnProperty.call(values, key) && values[key] != null)
+		{
+			tokens.push(encodeURIComponent(key) + ':' + encodeURIComponent(String(values[key])));
+		}
+	}
+
+	return tokens.join(',');
+};
+
+/**
+ * Returns the value of the given property of the given cell for the rules:
+ * the attribute of its data, the label of a cell without data, or for a
+ * property that starts with @ the value of the key after the @ in the style
+ * of the cell (see getStyleRuleOwnValue, which keeps the style in the
+ * optional context). Returns null if there is no such value.
+ */
+Graph.prototype.getStyleRuleValue = function(cell, property, context)
+{
+	// A property with an @ is a key of the style of the cell, which no
+	// attribute can be (eg. @role of Style My Diagram)
+	if (typeof property === 'string' && property.charAt(0) == '@')
+	{
+		return this.getStyleRuleOwnValue(cell, property.substring(1), context);
+	}
+	else if (cell.value != null && typeof cell.value === 'object')
 	{
 		return cell.value.getAttribute(property);
 	}
@@ -18094,7 +18604,7 @@ Graph.prototype.getStyleRuleInput = function(cell, property, context)
 
 	if (input == null)
 	{
-		input = Graph.createStyleRuleInput(this.getStyleRuleValue(cell, property));
+		input = Graph.createStyleRuleInput(this.getStyleRuleValue(cell, property, context));
 		context.inputs[property] = input;
 	}
 
@@ -18166,12 +18676,31 @@ Graph.prototype.applyStyleRules = function(cell, style, rules)
 			}
 			else
 			{
+				// A rule of a key of the style (@) sets only the keys that still
+				// have the value it gave the cell (see getStyleRuleBase), which
+				// is parsed once for all rules of the property
+				var input = this.getStyleRuleInput(cell, rule.property, context);
+
+				if (rule.property.charAt(0) == '@' && input.base === undefined)
+				{
+					input.base = this.getStyleRuleBase(cell, rule.property, context);
+				}
+
+				var base = input.base;
+
 				for (var j = 0; j < rule.style.length; j++)
 				{
-					if (!done[rule.style[j].key])
+					var key = rule.style[j].key;
+
+					if (!done[key])
 					{
-						style[rule.style[j].key] = rule.style[j].value;
-						done[rule.style[j].key] = true;
+						if (base == null || base[key] == null ||
+							this.getStyleRuleOwnValue(cell, key, context) == base[key])
+						{
+							style[key] = rule.style[j].value;
+						}
+
+						done[key] = true;
 					}
 				}
 			}
@@ -22971,6 +23500,49 @@ Graph.prototype.addTextOutlineButton = function()
 };
 
 /**
+ * Sets the given text alternative of a diagram that is only shown, eg. the
+ * Alt Text of the page in the lightbox, as the first text in the container
+ * for screen readers, or removes it if the given text is null. Screen readers
+ * that move through a page from text to text, like VoiceOver, skip the name
+ * of the container and read its labels. The text is hidden visually in a box
+ * that sticks to the top left of the visible area of the container, like the
+ * Text Outline button, so that screen readers do not scroll the container
+ * when they read it (see addTextOutlineButton).
+ */
+Graph.prototype.setAltTextCaption = function(text)
+{
+	var caption = this.altTextCaption;
+	var box = (caption != null) ? caption.parentNode : null;
+
+	if (text != null)
+	{
+		if (caption == null)
+		{
+			var doc = this.container.ownerDocument;
+			box = doc.createElement('div');
+			box.style.cssText = 'position:sticky;left:0;top:0;width:100%;height:0;';
+			caption = doc.createElement('div');
+			caption.style.cssText = 'position:absolute;left:4px;top:4px;width:1px;height:1px;' +
+				'padding:0;margin:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;';
+			box.appendChild(caption);
+			this.altTextCaption = caption;
+		}
+
+		// Text only, the Alt Text is author content
+		caption.textContent = text;
+
+		if (box.parentNode != this.container || box != this.container.firstChild)
+		{
+			this.container.insertBefore(box, this.container.firstChild);
+		}
+	}
+	else if (box != null && box.parentNode != null)
+	{
+		box.parentNode.removeChild(box);
+	}
+};
+
+/**
  * Renders the tooltip markup for hovers over the tooltip icon. The base
  * implementation shows overlay tooltips as escaped plain text.
  */
@@ -23001,11 +23573,18 @@ Graph.prototype.getTooltip = function(state, node, x, y)
 };
 
 /**
- * 
+ * Adds the flow animation of the given style to the given line node of an
+ * edge, a moving dash pattern or, with flowAnimationType=ring or dot, rings
+ * or dots that move along the line (see addFlowRingsToNode). Root is the
+ * node of the shape, default is the parent of the line node.
  */
-Graph.prototype.addFlowAnimationToNode = function(node, style, scale, id)
+Graph.prototype.addFlowAnimationToNode = function(node, style, scale, id, root)
 {
-	if (node != null && id != null)
+	if (node != null && id != null && this.getFlowAnimationType(style) != 'dash')
+	{
+		this.addFlowRingsToNode(node, style, scale, id, root);
+	}
+	else if (node != null && id != null)
 	{
 		var dashArray = node.getAttribute('stroke-dasharray');
 		var tokens = [];
@@ -23065,6 +23644,350 @@ Graph.prototype.addFlowAnimationToNode = function(node, style, scale, id)
 };
 
 /**
+ * Returns the type of the flow animation of the given style, dash (moving
+ * dashes, the default), ring (hollow rings that move along the edge, see
+ * addFlowRingsToNode) or dot (filled dots that move along the edge).
+ */
+Graph.prototype.getFlowAnimationType = function(style)
+{
+	var type = mxUtils.getValue(style, 'flowAnimationType', null);
+
+	return (type == 'ring' || type == 'dot') ? type : 'dash';
+};
+
+/**
+ * Adds rings or dots in the color of the given line node of an edge that move
+ * from the start to the end of the line (flowAnimationType=ring or dot).
+ * flowAnimationCount rings are spaced evenly along the edge and
+ * flowAnimationLoop=0 moves them over the edge once. A ring cuts a gap into
+ * the line and its markers with a mask, so that the background shows through
+ * the ring also if it is a gradient or an image.
+ *
+ * The rings and the holes of the masks are dashes of length zero with round
+ * caps on copies of the line. They move with a stroke-dashoffset animation
+ * like the dashed flow (see createFlowAnimationCss), so that no motion path
+ * is needed (SMIL is removed from SVG images, see
+ * EditorUi.isSelfContainedSvg), the reduced motion query stops them and the
+ * animated exports step them like the dashes (see
+ * AnimatedGifExport.findAnimatedPaths). A pathLength of 100 makes the dash
+ * pattern independent of the length of the line, so a ring takes
+ * flowAnimationDuration from the start to the end of every edge.
+ *
+ * A loop moves a pattern with a period of flowRingPeriod divided by the count
+ * by flowRingPeriod. Without the animation (reduced motion, print, renderers
+ * without CSS animations) a ring is in the middle of the edge, where the
+ * animation starts. A single pass moves a train of rings that starts with a
+ * ring at the start of the edge and has the others behind the start by two
+ * times flowRingPeriod in two times the duration (all rings have left the
+ * edge by then) and has no rings without the animation.
+ *
+ * Root is the node of the shape, whose first path is the plain line, default
+ * is the parent of the line node. The rings are added to the parent of the
+ * line node.
+ */
+Graph.prototype.addFlowRingsToNode = function(node, style, scale, id, root)
+{
+	var parent = node.parentNode;
+
+	// Removes the rings of an earlier call for the same paint
+	if (parent != null)
+	{
+		var child = parent.lastChild;
+
+		while (child != null)
+		{
+			var prev = child.previousSibling;
+
+			if (child.nodeType == mxConstants.NODETYPE_ELEMENT)
+			{
+				if ((child.nodeName == 'mask' && String(child.getAttribute('id')).
+					substring(0, 13) == 'ge-flow-ring-') || (child.nodeName == 'path' &&
+					child.getAttribute('pathLength') != null))
+				{
+					parent.removeChild(child);
+				}
+				else if (String(child.getAttribute('mask')).indexOf('#ge-flow-ring-') >= 0)
+				{
+					child.removeAttribute('mask');
+				}
+			}
+
+			child = prev;
+		}
+	}
+
+	// The first path of the shape is the plain geometry of the line, also for
+	// sketch=1, where the line has two rough strokes (see getFlowAnimationPath)
+	// and the sketch paint keeps the plain line in exports without pointer
+	// events. With opacityGroup=1 each pass of the sketch paint is a group of
+	// its own, so the plain line is not in the parent of the rough strokes.
+	root = (root != null) ? root : parent;
+	var first = (root != null) ? root.getElementsByTagName('path')[0] : null;
+	var d = (first != null) ? first.getAttribute('d') : null;
+	var bounds = Graph.getPathDataBounds(d);
+	d = Graph.getContinuousPathData(d);
+
+	if (bounds != null)
+	{
+		var doc = node.ownerDocument;
+		var hollow = this.getFlowAnimationType(style) == 'ring';
+		var sw = parseFloat(node.getAttribute('stroke-width'));
+		sw = (sw > 0 && isFinite(sw)) ? sw : 1;
+		var size = parseFloat(mxUtils.getValue(style, 'flowAnimationSize', null));
+
+		// The hole of a ring is at least as wide as the line
+		size = (isFinite(size)) ? Math.max(((hollow) ? 3 : 2) * sw,
+			Math.min(size, Graph.maxFlowRingSize) * scale) :
+			((hollow) ? Math.max(4 * sw, Graph.defaultFlowRingSize * scale) :
+			Math.max(3 * sw, Graph.defaultFlowDotSize * scale));
+		var count = parseInt(mxUtils.getValue(style, 'flowAnimationCount', 1));
+		count = (count > 1) ? Math.min(count, Graph.maxFlowRingCount) : 1;
+		var loop = mxUtils.getValue(style, 'flowAnimationLoop', '1') != '0';
+		var dur = parseInt(mxUtils.getValue(style,
+			'flowAnimationDuration', Graph.defaultFlowRingDuration));
+		dur = (dur > 0) ? dur : Graph.defaultFlowRingDuration;
+		var tf = mxUtils.getValue(style, 'flowAnimationTimingFunction', 'linear');
+		var ad = mxUtils.getValue(style, 'flowAnimationDirection', 'normal');
+		var spacing = Math.round(Graph.flowRingPeriod / count * 10000) / 10000;
+		var dashArray = '0 ' + spacing;
+		var offset = Graph.flowRingOffset;
+		var delay = -Math.round(dur / 2);
+
+		if (!loop)
+		{
+			dashArray = '0 ' + (3 * Graph.flowRingPeriod);
+			offset = -2 * Graph.flowRingPeriod;
+			delay = 0;
+
+			for (var i = 1; i < count; i++)
+			{
+				dashArray += ' 0 ' + spacing;
+			}
+
+			// A reverse pass starts when the last ring enters the end
+			if (ad == 'reverse' || ad == 'alternate-reverse')
+			{
+				delay = -Math.round(dur * (Graph.flowRingPeriod + 1 -
+					(count - 1) * spacing) / Graph.flowRingPeriod);
+			}
+		}
+
+		var animation = id + ((loop) ? '-ring ' : '-ring-once ') +
+			((loop) ? dur : 2 * dur) + 'ms ' + mxUtils.htmlEntities(tf) +
+			' ' + delay + 'ms ' + ((loop) ? 'infinite' : '1') +
+			' ' + mxUtils.htmlEntities(ad);
+		var masked = [];
+
+		// Masks the painted line and markers under rings and translucent dots
+		if (hollow || node.getAttribute('stroke-opacity') != null)
+		{
+			for (var child = parent.firstChild; child != null; child = child.nextSibling)
+			{
+				if ((child.nodeName == 'path' || child.nodeName == 'ellipse') &&
+					child.getAttribute('visibility') != 'hidden' &&
+					(child.getAttribute('stroke') != 'none' ||
+					child.getAttribute('fill') != 'none'))
+				{
+					if (child.nodeName == 'path')
+					{
+						var b = Graph.getPathDataBounds(child.getAttribute('d'));
+
+						if (b != null)
+						{
+							bounds.add(b);
+						}
+					}
+					else
+					{
+						var rx = parseFloat(child.getAttribute('rx'));
+						var ry = parseFloat(child.getAttribute('ry'));
+						var b = new mxRectangle(parseFloat(child.getAttribute('cx')) - rx,
+							parseFloat(child.getAttribute('cy')) - ry, 2 * rx, 2 * ry);
+
+						if (isFinite(b.x) && isFinite(b.y) && isFinite(b.width) && isFinite(b.height))
+						{
+							bounds.add(b);
+						}
+					}
+
+					masked.push(child);
+				}
+			}
+		}
+
+		// The default mask region is empty for horizontal and vertical lines,
+		// and the stroke can go out by 5 times its width (miter limit)
+		bounds.grow(Math.max(size / 2, 5 * sw) + 1);
+
+		// Workaround for references with a base tag in the page
+		var base = (doc == document && mxSvgCanvas2D.prototype.useAbsoluteIds) ?
+			mxSvgCanvas2D.prototype.getBaseUrl().replace(/([\(\)])/g, '\\$1') : '';
+
+		var createDots = function(width, color)
+		{
+			var dots = doc.createElementNS(mxConstants.NS_SVG, 'path');
+			dots.setAttribute('d', d);
+			dots.setAttribute('fill', 'none');
+			dots.setAttribute('stroke', color);
+			dots.setAttribute('stroke-width', Math.round(width * 100) / 100);
+			dots.setAttribute('stroke-linecap', 'round');
+			dots.setAttribute('stroke-dasharray', dashArray);
+			dots.setAttribute('pathLength', '100');
+			dots.setAttribute('pointer-events', 'none');
+			dots.style.animation = animation;
+			dots.style.strokeDashoffset = offset;
+
+			return dots;
+		};
+
+		// Returns the reference of a mask that hides discs of the given size
+		var createMask = function(width)
+		{
+			var mask = doc.createElementNS(mxConstants.NS_SVG, 'mask');
+			var maskId = 'ge-flow-ring-' + Editor.guid();
+			mask.setAttribute('id', maskId);
+			mask.setAttribute('maskUnits', 'userSpaceOnUse');
+
+			var rect = doc.createElementNS(mxConstants.NS_SVG, 'rect');
+			rect.setAttribute('fill', 'white');
+
+			var attrs = ['x', 'y', 'width', 'height'];
+
+			for (var i = 0; i < attrs.length; i++)
+			{
+				var value = Math.round(bounds[attrs[i]] * 100) / 100;
+				mask.setAttribute(attrs[i], value);
+				rect.setAttribute(attrs[i], value);
+			}
+
+			mask.appendChild(rect);
+			mask.appendChild(createDots(width, 'black'));
+			parent.appendChild(mask);
+
+			return 'url(' + base + '#' + maskId + ')';
+		};
+
+		if (masked.length > 0)
+		{
+			var lineMask = createMask(size);
+
+			for (var i = 0; i < masked.length; i++)
+			{
+				masked[i].setAttribute('mask', lineMask);
+			}
+		}
+
+		// A ring is a dot in the color of the line with a hole
+		var dots = createDots(size, node.getAttribute('stroke'));
+		dots.style.stroke = node.style.stroke;
+
+		if (node.getAttribute('stroke-opacity') != null)
+		{
+			dots.setAttribute('stroke-opacity', node.getAttribute('stroke-opacity'));
+		}
+
+		if (hollow)
+		{
+			dots.setAttribute('mask', createMask(size - 2 * sw));
+		}
+
+		parent.appendChild(dots);
+	}
+};
+
+/**
+ * Returns the given path data of mxSvgCanvas2D as one subpath, as dashes
+ * restart at each subpath, eg. at the line jumps of the rings of
+ * flowAnimationType=ring and dot. Moves without segments and the bars of
+ * jumpStyle=line (two points around the end of the previous or the start of
+ * the next subpath) are removed and the other moves become lines.
+ */
+Graph.getContinuousPathData = function(d)
+{
+	var result = d;
+
+	if (d != null && d.indexOf('M', 1) > 0)
+	{
+		var parts = d.split(/(?=M)/);
+		var subpaths = [];
+
+		for (var i = 0; i < parts.length; i++)
+		{
+			var values = parts[i].match(/-?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?/gi);
+
+			if (values != null && values.length >= 4)
+			{
+				subpaths.push({data: parts[i].replace(/^\s*M/, ''),
+					values: values.map(parseFloat)});
+			}
+		}
+
+		var isNear = function(x, y, values, index)
+		{
+			return Math.abs(x - values[index]) < 0.1 &&
+				Math.abs(y - values[index + 1]) < 0.1;
+		};
+
+		result = '';
+
+		for (var i = 0; i < subpaths.length; i++)
+		{
+			var v = subpaths[i].values;
+			var bar = false;
+
+			if (v.length == 4 && i > 0 && i < subpaths.length - 1 &&
+				/^[\s\d.e+-]*L[\s\d.e+-]*$/i.test(subpaths[i].data))
+			{
+				var cx = (v[0] + v[2]) / 2;
+				var cy = (v[1] + v[3]) / 2;
+				var prev = subpaths[i - 1].values;
+				bar = isNear(cx, cy, prev, prev.length - 2) ||
+					isNear(cx, cy, subpaths[i + 1].values, 0);
+			}
+
+			if (!bar)
+			{
+				result += ((result.length == 0) ? 'M' : ' L') + subpaths[i].data.replace(/\s+$/, '');
+			}
+		}
+
+		result = (result.length > 0) ? result : d;
+	}
+
+	return result;
+};
+
+/**
+ * Returns the bounds of the points of the given path data of mxSvgCanvas2D,
+ * which has absolute commands with points only (M, L, Q, C and Z), or null if
+ * the data has no points.
+ */
+Graph.getPathDataBounds = function(d)
+{
+	var values = (d != null) ? d.match(/-?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?/gi) : null;
+	var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+
+	if (values != null)
+	{
+		for (var i = 0; i < values.length - 1; i += 2)
+		{
+			var x = parseFloat(values[i]);
+			var y = parseFloat(values[i + 1]);
+
+			if (isFinite(x) && isFinite(y))
+			{
+				x0 = Math.min(x0, x);
+				y0 = Math.min(y0, y);
+				x1 = Math.max(x1, x);
+				y1 = Math.max(y1, y);
+			}
+		}
+	}
+
+	return (x0 <= x1) ? new mxRectangle(x0, y0, x1 - x0, y1 - y0) : null;
+};
+
+/**
  * Adds rack child layout style.
  */
 Graph.prototype.addFlowAnimationStyle = function()
@@ -23085,15 +24008,32 @@ Graph.prototype.addFlowAnimationStyle = function()
 
 /**
  * Returns the CSS of the flow animation with the given ID. The animation stops,
- * showing a dashed line, if the operating system asks for reduced motion, also
- * in SVG exports (the nodes have the animation in their style attribute, see
- * addFlowAnimationToNode).
+ * showing a dashed line or a ring in the middle of the edge (no ring for a
+ * single pass), if the operating system asks for reduced motion, also in SVG
+ * exports (the nodes have the animation in their style attribute, see
+ * addFlowAnimationToNode and addFlowRingsToNode).
  */
 Graph.prototype.createFlowAnimationCss = function(id)
 {
 	return '@keyframes ' + id + ' {\n' +
 	'  to {\n' +
 	'    stroke-dashoffset: 0;\n' +
+	'  }\n' +
+	'}\n' +
+	'@keyframes ' + id + '-ring {\n' +
+	'  from {\n' +
+	'    stroke-dashoffset: ' + Graph.flowRingPeriod + ';\n' +
+	'  }\n' +
+	'  to {\n' +
+	'    stroke-dashoffset: 0;\n' +
+	'  }\n' +
+	'}\n' +
+	'@keyframes ' + id + '-ring-once {\n' +
+	'  from {\n' +
+	'    stroke-dashoffset: 0;\n' +
+	'  }\n' +
+	'  to {\n' +
+	'    stroke-dashoffset: ' + (-2 * Graph.flowRingPeriod) + ';\n' +
 	'  }\n' +
 	'}\n' +
 	'@media (prefers-reduced-motion: reduce) {\n' +
@@ -23663,6 +24603,15 @@ HoverIcons.prototype.execute = function(state, dir, me)
 };
 
 /**
+ * Returns true if the icons are hidden, eg. while a popover of the inline
+ * toolbar is open (see InlineToolbar). This implementation returns false.
+ */
+HoverIcons.prototype.isSuspended = function()
+{
+	return false;
+};
+
+/**
  * 
  */
 HoverIcons.prototype.reset = function(clearTimeout)
@@ -23957,7 +24906,7 @@ HoverIcons.prototype.getState = function(state, x, y)
  */
 HoverIcons.prototype.update = function(state, x, y)
 {
-	if (!this.graph.connectionArrowsEnabled ||
+	if (!this.graph.connectionArrowsEnabled || this.isSuspended() ||
 		(this.graph.freehand != null && this.graph.freehand.isDrawing()) ||
 		(state != null && mxUtils.getValue(state.style, 'allowArrows', '1') == '0'))
 	{
@@ -29850,10 +30799,15 @@ Graph.prototype.isEdgeLabelCell = function(cell)
 					}
 				}
 				else if (path.getAttribute('data-rough-fill') == null &&
+					path.getAttribute('pathLength') == null &&
 					(d == null || d == path.getAttribute('d')))
 				{
 					// Skips rough.js hachure fill paths (data-rough-fill),
-					// which are stroked in the fill color.
+					// which are stroked in the fill color, and the copies of
+					// the line for flow rings and dots and their masks
+					// (pathLength, see Graph.addFlowRingsToNode), which have
+					// the d of the line and would win the indexed walk of
+					// hollow pipes.
 					if (index == null || --index == 0)
 					{
 						return path;
@@ -29875,12 +30829,14 @@ Graph.prototype.isEdgeLabelCell = function(cell)
 		{
 			this.state.view.graph.addFlowAnimationToNode(
 				this.getFlowAnimationPath(), this.state.style, this.scale,
-				this.state.view.graph.addFlowAnimationStyle());
+				this.state.view.graph.addFlowAnimationStyle(), this.node);
 		}
 	};
 	
 	/**
-	 * Overrides paint to add flowAnimation style.
+	 * Overrides paint to add flowAnimation style. Only the node that the
+	 * canvas paints into gets the animation, not the node of a shape that is
+	 * painted into another canvas, eg. for a thumbnail.
 	 */
 	var mxShapePaint = mxShape.prototype.paint;
 	
@@ -29888,7 +30844,8 @@ Graph.prototype.isEdgeLabelCell = function(cell)
 	{
 		mxShapePaint.apply(this, arguments);
 
-		if (this.isFlowAnimationEnabled())
+		if (canvas != null && canvas.root == this.node &&
+			this.isFlowAnimationEnabled())
 		{
 			this.addFlowAnimationToShape();
 		}
@@ -33595,11 +34552,15 @@ if (typeof mxVertexHandler !== 'undefined')
 		 * Contains the default style for edges. New edges and their label cells
 		 * get the text styles (see pasteCellStyles), so new labels of edges use
 		 * the page as their background and cut a gap out of the edge instead of
-		 * painting the label background (see replaceLabelGap). Existing edges
-		 * keep their label background as the key is not in the stylesheet.
+		 * painting the label background (see replaceLabelGap). The label
+		 * padding of 4 on the left and right widens the gap or background of
+		 * horizontal labels, which ends at the text, while the line height
+		 * leaves room above and below the text. Existing edges keep their label
+		 * background and no padding as the keys are not in the stylesheet.
 		 */
 		Graph.prototype.defaultEdgeStyle = {'edgeStyle': 'orthogonalEdgeStyle', 'rounded': '0',
-			'jettySize': 'auto', 'orthogonalLoop': '1', 'defaultLabelBackgroundColor': 'page'};
+			'jettySize': 'auto', 'orthogonalLoop': '1', 'defaultLabelBackgroundColor': 'page',
+			'labelPadding': '0 4'};
 
 		/**
 		 * Returns the current edge style as a string.
@@ -36738,7 +37699,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		{
 			var result = null;
 
-			if (this.multiSelectionHandlesEnabled && this.isEnabled() &&
+			if (this.isMultiSelectionHandlesEnabled() && this.isEnabled() &&
 				!this.isEditing() && this.getSelectionCount() > 1)
 			{
 				var model = this.getModel();
@@ -37991,6 +38952,15 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 
 		/**
+		 * Returns true if a click on the tooltip icon of the given cell edits
+		 * the tooltip. If false is returned, the click shows the tooltip.
+		 */
+		Graph.prototype.isTooltipOverlayEditable = function(cell, evt)
+		{
+			return this.isEnabled() && this.isCellEditable(cell);
+		};
+
+		/**
 		 * Creates a tooltip overlay for the given cell.
 		 */
 		Graph.prototype.createTooltipOverlay = function(cell)
@@ -38011,7 +38981,7 @@ if (typeof mxVertexHandler !== 'undefined')
 				{
 					var cell = evt.getProperty('cell');
 
-					if (graph.isEnabled() && graph.isCellEditable(cell))
+					if (graph.isTooltipOverlayEditable(cell, evt.getProperty('event')))
 					{
 						graph.setSelectionCell(cell);
 						graph.editTooltip(cell);
@@ -40234,6 +41204,7 @@ if (typeof mxVertexHandler !== 'undefined')
 							var div = document.createElement('div');
 							div.innerHTML = Graph.sanitizeHtml(html);
 							Graph.scopeStyleElements(div);
+							graph.updateFileBaseLinks(div);
 
 							return (div.firstChild != null) ? mxUtils.getXml(div) : null;
 						};
@@ -40691,7 +41662,8 @@ if (typeof mxVertexHandler !== 'undefined')
 					// Keeps links to paths as they are, as they point to the host
 					// where the file is published, not to the host of the editor,
 					// which is file:// in the desktop app, and all relative links
-					// if the base URL is a file: URL (see isFileBaseUrl)
+					// if the base URL is a file: URL (see isFileBaseUrl), where
+					// updateSvgLinks removes the links with other schemes
 					if (result != null && result.charAt(0) != '/' &&
 						!state.view.graph.isFileBaseUrl())
 					{
@@ -40763,7 +41735,7 @@ if (typeof mxVertexHandler !== 'undefined')
 							state.shape.addFlowAnimationToShape = function()
 							{
 								graph.addFlowAnimationToNode(this.getFlowAnimationPath(),
-									state.style, scale, addFlowAnimationStyle());
+									state.style, scale, addFlowAnimationStyle(), this.node);
 							};
 
 							if ((ignoreSelection && lookup == null) || selected)
@@ -40891,6 +41863,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		 */
 		Graph.prototype.updateSvgLinks = function(node, target, removeCustom)
 		{
+			this.updateFileBaseLinks(node);
 			var links = node.getElementsByTagName('a');
 			
 			for (var i = 0; i < links.length; i++)
@@ -41070,11 +42043,11 @@ if (typeof mxVertexHandler !== 'undefined')
 		 */
 		Graph.prototype.flipEdgePoints = function(cell, horizontal, c)
 		{
-			var geo = this.getCellGeometry(cell);
+			var prev = this.getCellGeometry(cell);
 
-			if (geo != null)
+			if (prev != null)
 			{
-				geo = geo.clone();
+				var geo = prev.clone();
 
 				if (geo.points != null)
 				{
@@ -41109,7 +42082,12 @@ if (typeof mxVertexHandler !== 'undefined')
 				flipTerminalPoint(geo.getTerminalPoint(true));
 				flipTerminalPoint(geo.getTerminalPoint(false));
 
-				this.model.setGeometry(cell, geo);
+				// Connected edges without waypoints do not change, and an
+				// unchanged geometry would be an undo step that changes nothing
+				if (!geo.equals(prev))
+				{
+					this.model.setGeometry(cell, geo);
+				}
 			}
 		};
 		
@@ -50174,30 +51152,6 @@ if (typeof mxVertexHandler !== 'undefined')
 			return mxGraphHandlerGetBoundingBox.apply(this, arguments);
 		};
 
-		// A moved sequence message is snapped to the grid and aligned by guides
-		// with its line: the state of a horizontal edge is one pixel high, so its
-		// center is half a pixel below the line
-		var mxGraphHandlerGetStateBounds = mxGraphHandler.prototype.getStateBounds;
-		mxGraphHandler.prototype.getStateBounds = function(cells)
-		{
-			var bounds = mxGraphHandlerGetStateBounds.apply(this, arguments);
-
-			if (bounds != null && cells.length == 1 && this.graph.isSequenceMessage(cells[0]))
-			{
-				var state = this.graph.view.getState(cells[0]);
-				var pts = (state != null) ? state.absolutePoints : null;
-
-				if (pts != null && pts[0] != null && pts[pts.length - 1] != null &&
-					pts[0].y == pts[pts.length - 1].y)
-				{
-					bounds.y = pts[0].y;
-					bounds.height = 0;
-				}
-			}
-
-			return bounds;
-		};
-
 		// Ignores child cells with part style and cells outside of the
 		// visible area plus half a viewport of margin in each direction
 		// as guides (guides for such cells cannot be seen). Also ignores
@@ -54047,6 +55001,18 @@ if (typeof mxVertexHandler !== 'undefined')
 		};
 
 		/**
+		 * Returns true if the given graph has the box of a multi-selection.
+		 * The handlers below are shared with plain mxGraph instances (such as
+		 * the graph of the GraphML importer), which have no
+		 * isMultiSelectionHandlesEnabled and never get the box.
+		 */
+		Graph.hasMultiSelectionHandles = function(graph)
+		{
+			return graph.isMultiSelectionHandlesEnabled != null &&
+				graph.isMultiSelectionHandlesEnabled();
+		};
+
+		/**
 		 * Creates, updates or destroys the box for the cells of a
 		 * multi-selection (see Graph.getMultiSelectionCells). The box of an
 		 * active gesture is kept.
@@ -54092,7 +55058,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		{
 			var args = arguments;
 
-			if (this.graph.multiSelectionHandlesEnabled || this.multiSelectionHandler != null)
+			if (Graph.hasMultiSelectionHandles(this.graph) || this.multiSelectionHandler != null)
 			{
 				var update = mxUtils.bind(this, function()
 				{
@@ -54239,7 +55205,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		var vertexHandlerRefreshMultiSelection = mxVertexHandler.prototype.refresh;
 		mxVertexHandler.prototype.refresh = function()
 		{
-			if (this.graph.multiSelectionHandlesEnabled || this.multiSelectionHandled != null)
+			if (Graph.hasMultiSelectionHandles(this.graph) || this.multiSelectionHandled != null)
 			{
 				this.multiSelectionHandled = this.isMultiSelectionHandled();
 			}
@@ -54281,7 +55247,7 @@ if (typeof mxVertexHandler !== 'undefined')
 		var edgeHandlerRefreshMultiSelection = mxEdgeHandler.prototype.refresh;
 		mxEdgeHandler.prototype.refresh = function()
 		{
-			if (this.graph.multiSelectionHandlesEnabled || this.multiSelectionHandled != null)
+			if (Graph.hasMultiSelectionHandles(this.graph) || this.multiSelectionHandled != null)
 			{
 				this.multiSelectionHandled = this.isMultiSelectionHandled();
 			}

@@ -194,12 +194,12 @@ EditorUi = function(editor, container, lightbox)
 		
 		graph.addListener('cellsInserted', function(sender, evt)
 		{
-			graph.pasteCellStyles(graph.includeDescendants(evt.getProperty('cells')));
+			ui.pasteNewCellStyles(graph.includeDescendants(evt.getProperty('cells')));
 		});
 		
 		graph.addListener('textInserted', function(sender, evt)
 		{
-			graph.pasteCellStyles(evt.getProperty('cells'));
+			ui.pasteNewCellStyles(evt.getProperty('cells'));
 		});
 		
 		this.createDivs();
@@ -953,7 +953,7 @@ EditorUi = function(editor, container, lightbox)
 				}, 0);
 			}
 			
-			graph.pasteCellStyles(cells);
+			ui.pasteNewCellStyles(cells);
 		});
 
 		// Shows current edge style and shape in toolbar. The images are computed
@@ -1239,8 +1239,8 @@ EditorUi = function(editor, container, lightbox)
 	 {
 		 var bytes = fread(d, 4);
 		 
-		 return bytes.charCodeAt(3) + (bytes.charCodeAt(2) << 8) +
-			 (bytes.charCodeAt(1) << 16) + (bytes.charCodeAt(0) << 24);
+		 return (bytes.charCodeAt(3) + (bytes.charCodeAt(2) << 8) +
+			 (bytes.charCodeAt(1) << 16) + (bytes.charCodeAt(0) << 24)) >>> 0;
 	 };
 	 
 	 // Checks signature
@@ -1347,6 +1347,38 @@ EditorUi.prototype.hsplitClickEnabled = false;
  * Whether the default styles should be updated when styles are changed. Default is true.
  */
 EditorUi.prototype.updateDefaultStyle = false;
+
+/**
+ * Applies the current default styles to the given new cells: inserted cells
+ * (cellsInserted), typed text (textInserted) and connections with the cells
+ * they insert. Only the keys the cells do not set are written (see
+ * Graph.pasteCellStyles). The optional target is the graph of the cells if
+ * they are not in the diagram (the clones of a drag preview of the sidebar),
+ * which gets the default styles of the diagram.
+ */
+EditorUi.prototype.pasteNewCellStyles = function(cells, target)
+{
+	var graph = this.editor.graph;
+
+	if (target != null)
+	{
+		target.pasteCellStyles(cells, graph.currentVertexStyle, graph.currentEdgeStyle,
+			null, graph.pasteEdgeStyle, graph.pasteStylesToText);
+	}
+	else
+	{
+		graph.pasteCellStyles(cells);
+	}
+};
+
+/**
+ * Hook for the cell that a shape picker without a callback has just added to
+ * the diagram with addCell (the double-click picker, its search and Insert >
+ * Shape...), inside the model update of the insert. addCell fires no
+ * cellsInserted, so the cell does not get pasteNewCellStyles. This
+ * implementation does nothing.
+ */
+EditorUi.prototype.shapePickerCellAdded = function(cell) { };
 
 /**
  * Whether the default styles should be updated when styles are changed. Default is true.
@@ -2700,7 +2732,10 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 		}
 		
 		graph.container.appendChild(div);
-		
+
+		// Items and click handlers of the shapes (see insertShapeForTyping)
+		var items = [];
+
 		var addCell = mxUtils.bind(this, function(cell)
 		{
 			// Wrapper needed to catch events
@@ -2737,15 +2772,16 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 			
 			if (geo != null)
 			{
-				var temp = this.sidebar.createVertexTemplateFromCells([cell],
-					geo.width, geo.height, '', true, false, null, true,
-					mxUtils.bind(this, function(evt)
+				// Typed is true for a keystroke that types the label of the shape,
+				// which inserts it like a click without the modifier keys and lets
+				// the browser type the character (see insertShapeForTyping)
+				var click = mxUtils.bind(this, function(evt, typed)
 				{
-					if (!mxEvent.isAltDown(evt) || graph.getSelectionCount() != 1)
+					if (typed || !mxEvent.isAltDown(evt) || graph.getSelectionCount() != 1)
 					{
 						this.sidebar.addRecentShapes([cell]);
 
-						if (mxEvent.isShiftDown(evt) && (source != null ||
+						if (!typed && mxEvent.isShiftDown(evt) && (source != null ||
 							!graph.isSelectionEmpty()))
 						{
 							var temp = graph.getEditableCells((source != null) ?
@@ -2781,6 +2817,7 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 								try
 								{
 									graph.addCell(clone);
+									ui.shapePickerCellAdded(clone);
 
 									if (graph.model.isVertex(clone) &&
 										graph.isAutoSizeCell(clone))
@@ -2813,9 +2850,17 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 							afterClick(evt);
 						}
 
-						mxEvent.consume(evt);
+						if (!typed)
+						{
+							mxEvent.consume(evt);
+						}
 					}
-				}), 25, 25, null, null, source, connectEdge);
+				});
+
+				var temp = this.sidebar.createVertexTemplateFromCells([cell],
+					geo.width, geo.height, '', true, false, null, true,
+					click, 25, 25, null, null, source, connectEdge);
+				items.push({elt: temp, click: click});
 
 				// Name for screen readers, eg. Ellipse, or the text of the label, eg. Text
 				var label = graph.getIndexableText([cell]);
@@ -2841,6 +2886,38 @@ EditorUi.prototype.createShapePicker = function(x, y, source, callback, directio
 		{
 			addCell(cells[i]);
 		}
+
+		// Inserts the focused or else the first shape for a keystroke that types
+		// its label (see typeIntoShapePicker). Editing that starts here gets the focus
+		// before the browser types the character (see mxCellEditor.editByTyping),
+		// else the inserted shape is selected and the typing shim gets it.
+		div.insertShapeForTyping = function(evt)
+		{
+			var item = (items.length > 0) ? items[0] : null;
+
+			for (var i = 0; i < items.length; i++)
+			{
+				if (mxUtils.isAncestorNode(items[i].elt, document.activeElement))
+				{
+					item = items[i];
+					break;
+				}
+			}
+
+			if (item != null)
+			{
+				graph.cellEditor.editByTyping = true;
+
+				try
+				{
+					item.click(evt, true);
+				}
+				finally
+				{
+					graph.cellEditor.editByTyping = false;
+				}
+			}
+		};
 
 		// Tab and Shift+Tab move between the shapes and Escape closes the picker
 		// (see Sidebar.addClickHandler for the arrow keys, Enter and Space)
@@ -3406,11 +3483,12 @@ EditorUi.prototype.getPaletteStyle = function(cell, entry, previous)
 };
 
 /**
- * Creates a temporary graph instance for rendering off-screen content.
+ * Returns true if a shape picker is shown. A picker that was removed with the
+ * contents of its container is not (see hideShapePicker).
  */
 EditorUi.prototype.isShapePickerVisible = function(cancel)
 {
-	return this.shapePicker != null;
+	return this.shapePicker != null && this.shapePicker.parentNode != null;
 };
 
 /**
@@ -3643,6 +3721,61 @@ EditorUi.prototype.focusOmniSearch = function()
 	}
 
 	return result;
+};
+
+/**
+ * Shows the omnibox, the search for actions, menus and the format of the
+ * selection, with the given scope (see Omnibox.show).
+ */
+EditorUi.prototype.showOmnibox = function(scope)
+{
+	var omnibox = this.getOmnibox();
+
+	if (omnibox != null)
+	{
+		omnibox.show(scope);
+	}
+};
+
+/**
+ * Returns the omnibox, eg. to add entries with addProvider, or null if it is
+ * not available.
+ */
+EditorUi.prototype.getOmnibox = function()
+{
+	if (this.omnibox == null)
+	{
+		this.omnibox = this.createOmnibox();
+	}
+
+	return this.omnibox;
+};
+
+/**
+ * Creates the omnibox or returns null if it is not available.
+ */
+EditorUi.prototype.createOmnibox = function()
+{
+	return (typeof Omnibox !== 'undefined') ? new Omnibox(this) : null;
+};
+
+/**
+ * Returns true if the omnibox can be shown (the action searchActions, its
+ * keystroke Ctrl+Alt+P and the search buttons). This implementation returns
+ * true if the omnibox is loaded.
+ */
+EditorUi.prototype.isOmniboxEnabled = function()
+{
+	return typeof Omnibox !== 'undefined';
+};
+
+/**
+ * Returns true if the format panel shows a button that searches its controls
+ * in the omnibox. This implementation returns false.
+ */
+EditorUi.prototype.isFormatSearchVisible = function()
+{
+	return false;
 };
 
 /**
@@ -4639,6 +4772,37 @@ EditorUi.prototype.getDirectionalDistance = function(a, b, dx, dy, row)
 };
 
 /**
+ * Inserts the focused or else the first shape of the shown shape picker for a
+ * keystroke that types a character and returns true if it did. The character
+ * becomes the label, like typing on a selected cell. Space is left for panning
+ * and keys with a binding run their shortcut. Characters typed with AltGr
+ * (which Windows reports with Ctrl and Alt pressed) are typed, keys with Alt
+ * or Ctrl alone are not. Called from onKeyPress for keystrokes in the container
+ * (also in the typing shim of a selected cell) and from the key handler for
+ * keystrokes outside (eg. if the page has the focus).
+ */
+EditorUi.prototype.typeIntoShapePicker = function(evt)
+{
+	var graph = this.editor.graph;
+	var altGraph = !mxClient.IS_MAC && typeof evt.getModifierState === 'function' &&
+		evt.getModifierState('AltGraph');
+
+	if (this.isShapePickerVisible() && this.shapePicker.insertShapeForTyping != null &&
+		this.isImmediateEditingEvent(evt) && graph.isEnabled() && !graph.isEditing() &&
+		evt.key != null && evt.key.length === 1 && evt.key != ' ' &&
+		(altGraph || (!mxEvent.isAltDown(evt) && !mxEvent.isControlDown(evt))) &&
+		!mxEvent.isMetaDown(evt) && !EditorUi.isComposingKeyEvent(evt) &&
+		(this.keyHandler == null || this.keyHandler.resolveFunction(evt) == null))
+	{
+		this.shapePicker.insertShapeForTyping(evt);
+
+		return true;
+	}
+
+	return false;
+};
+
+/**
  * Starts editing on keydown for the selected cell. This is a fallback for
  * when the typing shim is not active. The shim handles IME correctly by
  * keeping an invisible textarea focused so the OS engages IME from the
@@ -4647,6 +4811,13 @@ EditorUi.prototype.getDirectionalDistance = function(a, b, dx, dy, row)
 EditorUi.prototype.onKeyPress = function(evt)
 {
 	var graph = this.editor.graph;
+
+	// Typing while a shape picker is shown inserts one of its shapes, also
+	// if a cell is selected and the typing shim has the focus
+	if (this.typeIntoShapePicker(evt))
+	{
+		return;
+	}
 
 	// Skip if the event came from the typing shim (the shim handles editing start)
 	if (this.typingShim != null && mxEvent.getSource(evt) === this.typingShim)
@@ -5849,7 +6020,7 @@ EditorUi.prototype.initCanvas = function()
 		
 		// Creates toolbar for viewer - do not use CSS here
 		// as this may be used in a viewer that has no CSS
-		if (urlParams['toolbar'] != '0')
+		if (urlParams['toolbar'] != '0' && !this.installModernChromelessToolbar())
 		{
 			var toolbarConfig = JSON.parse(decodeURIComponent(urlParams['toolbar-config'] || '{}'));
 			
@@ -7340,6 +7511,16 @@ EditorUi.prototype.addChromelessToolbarItems = function(addButton)
 };
 
 /**
+ * Hook for the toolbar of a chromeless view in another look. Returns true
+ * if it installed one, then the default toolbar is not created. This
+ * implementation returns false (see LightboxModern.js).
+ */
+EditorUi.prototype.installModernChromelessToolbar = function()
+{
+	return false;
+};
+
+/**
  * Creates a temporary graph instance for rendering off-screen content.
  */
 EditorUi.prototype.isPagesEnabled = function()
@@ -7897,6 +8078,43 @@ EditorUi.prototype.undo = function()
 EditorUi.prototype.canRedo = function()
 {
 	return this.editor.graph.isEditing() || this.editor.undoManager.canRedo();
+};
+
+/**
+ * Returns true if layers can be shown or hidden in the Layers window. This
+ * is true if the graph is enabled or if layers are shown and hidden only in
+ * this view.
+ */
+EditorUi.prototype.isLayerVisibilityEditable = function()
+{
+	return this.editor.graph.isEnabled() || this.isLayerVisibilityLocal();
+};
+
+/**
+ * Returns true if layers are shown and hidden only in this view, without
+ * changing the diagram (see <Graph.setLayersVisibleInView>). Default is false.
+ */
+EditorUi.prototype.isLayerVisibilityLocal = function()
+{
+	return false;
+};
+
+/**
+ * Shows or hides the given layers in the Layers window: in this view if
+ * <isLayerVisibilityLocal> returns true, else in the diagram.
+ */
+EditorUi.prototype.setLayersVisible = function(layers, visible)
+{
+	var graph = this.editor.graph;
+
+	if (this.isLayerVisibilityLocal())
+	{
+		graph.setLayersVisibleInView(layers, visible);
+	}
+	else if (graph.isEnabled())
+	{
+		graph.setCellsVisible(layers, visible);
+	}
 };
 
 /**
@@ -9188,7 +9406,8 @@ EditorUi.prototype.announce = function(text, repeat)
 
 			window.setTimeout(mxUtils.bind(this, function()
 			{
-				if (this.lastAnnouncement == text)
+				// The UI may have been destroyed in the meantime
+				if (this.liveRegion != null && this.lastAnnouncement == text)
 				{
 					this.liveRegion.textContent = text;
 				}
@@ -9217,14 +9436,34 @@ EditorUi.prototype.installScreenReaderSupport = function()
 
 	// Diagrams that are only shown, eg. in the lightbox, are figures that
 	// screen readers read like the page, with a text outline, named after
-	// the text alternative of the author if there is one
+	// the text alternative of the author if there is one, which is also the
+	// first text in the figure (see Graph.setAltTextCaption). The diagram of
+	// the editor is described by that text.
 	var figure = this.editor.chromeless && !this.editor.editable;
 
 	var updateName = mxUtils.bind(this, function()
 	{
-		var alt = (figure) ? this.getDiagramAltText() : null;
+		var alt = this.getDiagramAltText();
 		container.setAttribute('aria-roledescription', mxResources.get('diagram'));
-		container.setAttribute('aria-label', (alt != null) ? alt : this.getDiagramDescription());
+
+		if (figure)
+		{
+			container.setAttribute('aria-label', (alt != null) ? alt : this.getDiagramDescription());
+			graph.setAltTextCaption(alt);
+		}
+		else
+		{
+			container.setAttribute('aria-label', this.getDiagramDescription());
+
+			if (alt != null)
+			{
+				container.setAttribute('aria-description', alt);
+			}
+			else
+			{
+				container.removeAttribute('aria-description');
+			}
+		}
 	});
 
 	container.setAttribute('role', (figure) ? 'figure' : 'application');
@@ -9999,13 +10238,13 @@ EditorUi.prototype.pickColorModal = function(color, apply, defaultColor, default
 	this.showDialog(dlg.container, 250, null, true, false);
 
 	// Re-fits the modal dialog to its content when the advanced/dark section
-	// is toggled, mirroring the tool window's fitHeight behavior. The 48px
-	// accounts for the .geDialog padding (same as showDialog's auto-size).
+	// is toggled, mirroring the tool window's fitHeight behavior (plus the
+	// .geDialog padding, as showDialog's auto-size).
 	var dialogContainer = this.dialog.container;
 
 	dlg.resizeFn = function()
 	{
-		dialogContainer.style.height = (dlg.container.scrollHeight + 48) + 'px';
+		dialogContainer.style.height = Dialog.getFrameHeight(dialogContainer, dlg.container.scrollHeight) + 'px';
 	};
 
 	dlg.init();
@@ -10444,6 +10683,19 @@ EditorUi.prototype.showDataDialog = function(cell)
 };
 
 /**
+ * Shows the dialog that edits the given formatted text of the given cell
+ * (Edit Tooltip, Edit Note) with the given title and calls fn with the new
+ * value after Apply. The id names the stored size of the dialog.
+ */
+EditorUi.prototype.showMarkupDialog = function(cell, title, value, fn, id)
+{
+	var dlg = new MarkupDialog(this, title, value, fn);
+	this.showDialog(dlg.container, 420, 300, true, true, null, null, null,
+		new mxRectangle(0, 0, 320, 240), null, id);
+	dlg.init();
+};
+
+/**
  * Hides the current menu.
  */
 EditorUi.prototype.showBackgroundImageDialog = function(apply, img)
@@ -10759,6 +11011,14 @@ EditorUi.prototype.createKeyHandler = function(editor)
 			// Invokes the function for the keystroke
 			else if (!this.isEventIgnored(evt))
 			{
+				// Keystrokes outside the container (eg. on the page) do not reach
+				// onKeyPress, which types the others into a shape picker
+				if (!mxUtils.isAncestorNode(graph.container, mxEvent.getSource(evt)) &&
+					editorUi.typeIntoShapePicker(evt))
+				{
+					return;
+				}
+
 				var boundFunction = this.resolveFunction(evt);
 
 				if (boundFunction != null)
@@ -11241,7 +11501,25 @@ EditorUi.prototype.createKeyHandler = function(editor)
 		keyHandler.bindAction(13, false, 'keyPressEnter'); // Enter
 		keyHandler.bindKey(113, function() { if (graph.isEnabled()) { graph.startEditingAtCell(); }}); // F2
 	}
-	
+
+	// Ctrl+Alt+P shows the omnibox only where it is enabled; elsewhere the
+	// keystroke does what it did before (eg. AltGr+P types a character)
+	var keyHandlerGetOmniboxFunction = keyHandler.getFunction;
+
+	keyHandler.getFunction = function(evt)
+	{
+		if (evt.keyCode == 80 && this.isControlDown(evt) && mxEvent.isAltDown(evt) &&
+			!mxEvent.isShiftDown(evt) && graph.isEnabled() && editorUi.isOmniboxEnabled())
+		{
+			return function()
+			{
+				editorUi.actions.get('searchActions').funct();
+			};
+		}
+
+		return keyHandlerGetOmniboxFunction.apply(this, arguments);
+	};
+
 	return keyHandler;
 };
 

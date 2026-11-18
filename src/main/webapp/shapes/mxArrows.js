@@ -2639,8 +2639,31 @@ mxShapeArrows2UTurnArrow.prototype.cst = {
 };
 
 /**
+* Variable: maxArrowheadLength
+*
+* Longest arrowhead (dx2) that is painted and that the handle sets, so that the
+* scaled points stay finite at any zoom.
+*/
+mxShapeArrows2UTurnArrow.prototype.maxArrowheadLength = 1e7;
+
+/**
+* Function: getArrowheadLength
+*
+* Returns the arrowhead length (dx2) of the given style for the painter, the
+* connection points and the handle: any length of 0 or more as stored (also
+* one longer than the shape is wide) up to <maxArrowheadLength>, and the
+* default for infinite and non-numeric lengths.
+*/
+mxShapeArrows2UTurnArrow.prototype.getArrowheadLength = function(style)
+{
+	var dx2 = Math.max(0, parseFloat(mxUtils.getValue(style, 'dx2', this.dx2)));
+
+	return (isFinite(dx2)) ? Math.min(dx2, this.maxArrowheadLength) : this.dx2;
+};
+
+/**
 * Function: paintVertexShape
-* 
+*
 * Paints the vertex shape.
 */
 mxShapeArrows2UTurnArrow.prototype.paintVertexShape = function(c, x, y, w, h)
@@ -2650,8 +2673,8 @@ mxShapeArrows2UTurnArrow.prototype.paintVertexShape = function(c, x, y, w, h)
 	var dy = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'dy', this.dy))));
 	var arrowHead = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'arrowHead', this.arrowHead))));
 	var dx = (h - arrowHead / 2 + dy) / 2;
-	var dx2 = Math.max(0, Math.min(Math.max(w, dx), parseFloat(mxUtils.getValue(this.style, 'dx2', this.dx2))));
-	
+	var dx2 = this.getArrowheadLength(this.style);
+
 	c.begin();
 	c.moveTo(dx, 0);
 	c.lineTo(dx + dx2, arrowHead * 0.5);
@@ -2691,7 +2714,8 @@ Graph.handleFactory[mxShapeArrows2UTurnArrow.prototype.cst.U_TURN_ARROW] = funct
 				var dy = Math.max(0, Math.min(arrowHead, parseFloat(mxUtils.getValue(this.state.style, 'dy', this.dy))));
 				var dx = (bounds.height - arrowHead / 2 + dy) / 2;
 				
-				var dx2 = Math.max(0, Math.min(bounds.width - dx, parseFloat(mxUtils.getValue(this.state.style, 'dx2', this.dx2))));
+				// On the tip that the painter draws
+				var dx2 = (this.state.shape != null) ? this.state.shape.getArrowheadLength(this.state.style) : 0;
 
 				return new mxPoint(bounds.x + dx + dx2, bounds.y + arrowHead / 2);
 			}, function(bounds, pt)
@@ -2699,7 +2723,10 @@ Graph.handleFactory[mxShapeArrows2UTurnArrow.prototype.cst.U_TURN_ARROW] = funct
 				var arrowHead = Math.max(0, Math.min(bounds.height, parseFloat(mxUtils.getValue(this.state.style, 'arrowHead', this.arrowHead))));
 				var dy = Math.max(0, Math.min(arrowHead, parseFloat(mxUtils.getValue(this.state.style, 'dy', this.dy))));
 				var dx = (bounds.height - arrowHead / 2 + dy) / 2;
-				this.state.style['dx2'] = Math.round(100 * Math.max(0, Math.min(Math.max(bounds.width, dx), pt.x - bounds.x - dx))) / 100;
+
+				// Same limit as the painter, so that a drag keeps what is drawn
+				this.state.style['dx2'] = Math.round(100 * Math.max(0, Math.min(
+					mxShapeArrows2UTurnArrow.prototype.maxArrowheadLength, pt.x - bounds.x - dx))) / 100;
 			});
 	
 	handles.push(handle2);
@@ -2727,8 +2754,9 @@ mxShapeArrows2UTurnArrow.prototype.getConstraints = function(style, w, h)
 	var dy = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'dy', this.dy))));
 	var arrowHead = Math.max(0, Math.min(h, parseFloat(mxUtils.getValue(this.style, 'arrowHead', this.arrowHead))));
 	var dx = (h - arrowHead / 2 + dy) / 2;
-	// The arrowhead length within the range of its handle, as in the painter
-	var dx2 = Math.max(0, Math.min(Math.max(w, dx), parseFloat(mxUtils.getValue(this.style, 'dx2', this.dx2))));
+	// The arrowhead length as in the painter, which does not depend on the
+	// width, so the end is a fixed offset from the left side
+	var dx2 = this.getArrowheadLength(this.style);
 	// The bend is drawn from the height: the points at the bend keep their
 	// offset from the left side and the end is anchored to the right side,
 	// so edges follow a resize that keeps the height (eg. a longer arrow)
